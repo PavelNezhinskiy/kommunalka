@@ -1,0 +1,3653 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<title>Коммуналка</title>
+<meta name="description" content="Учёт электричества, воды и отопления">
+<meta name="theme-color" content="#0b0d12">
+<meta name="color-scheme" content="dark">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Коммуналка">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   КОММУНАЛКА — mobile-first design system
+   ───────────────────────────────────────────────────────────── */
+:root{
+  /* neutrals */
+  --bg:#0b0d12;--bg2:#14171f;--bg3:#1c202b;--bg4:#242936;
+  --border:#262b38;--border2:#333a4d;
+  --text:#eceef5;--text2:#b6bdd0;--muted:#868fa8;
+  /* accents (совпадают с цветами графиков) */
+  --elec:#f59e0b;--bath:#3b82f6;--kitchen:#10b981;--heat:#ef4444;
+  --success:#22c55e;--danger:#ef4444;
+  --radius:14px;--radius-sm:10px;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
+  --sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom);
+  --sal:env(safe-area-inset-left);--sar:env(safe-area-inset-right);
+  --tabbar:calc(58px + var(--sab));
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh;
+  font-size:15px;line-height:1.45;overscroll-behavior-y:none;
+}
+.num,.card-value,.kpi-value,.month-item .val,.month-total .val,.stat-card-main,
+.heat-room-val,td,th{font-variant-numeric:tabular-nums}
+::selection{background:rgba(245,158,11,.3)}
+
+/* ─── LOADER ─────────────────────────────────────────────── */
+#loader{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;z-index:999}
+.spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--elec);
+  border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ─── APP HEADER ─────────────────────────────────────────── */
+.appbar{
+  position:sticky;top:0;z-index:100;background:rgba(11,13,18,.82);
+  backdrop-filter:saturate(150%) blur(14px);-webkit-backdrop-filter:saturate(150%) blur(14px);
+  border-bottom:1px solid var(--border);
+  padding:calc(var(--sat) + 10px) calc(14px + var(--sar)) 10px calc(14px + var(--sal));
+  display:flex;align-items:center;gap:10px;
+}
+.appbar h1{font-size:17px;font-weight:650;letter-spacing:-.2px;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appbar-logo{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;
+  background:linear-gradient(145deg,#f59e0b,#ef4444);font-size:15px;flex:none}
+.icon-btn{width:38px;height:38px;flex:none;display:grid;place-items:center;border:none;
+  background:var(--bg3);border:1px solid var(--border);border-radius:11px;color:var(--text2);
+  font-size:16px;cursor:pointer;transition:.15s}
+.icon-btn:active{transform:scale(.93)}
+
+/* desktop top-tabs (скрыты на телефоне) */
+.topnav{display:none;gap:2px;margin-left:8px}
+.topnav .nav-btn{background:none;border:none;color:var(--muted);cursor:pointer;
+  padding:8px 13px;font-size:14px;font-weight:550;border-radius:10px;transition:.15s}
+.topnav .nav-btn:hover{color:var(--text);background:var(--bg3)}
+.topnav .nav-btn.active{color:#0b0d12;background:var(--elec)}
+
+/* ─── BOTTOM TAB BAR ────────────────────────────────────── */
+.tabbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:120;
+  display:grid;grid-template-columns:repeat(4,1fr);
+  background:rgba(16,19,26,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border-top:1px solid var(--border);
+  padding:6px calc(4px + var(--sar)) calc(var(--sab) + 4px) calc(4px + var(--sal));
+}
+.tab{background:none;border:none;cursor:pointer;color:var(--muted);display:flex;
+  flex-direction:column;align-items:center;gap:2px;padding:4px 2px;font-size:10.5px;
+  font-weight:550;border-radius:10px;transition:.15s;min-height:46px;justify-content:center}
+.tab i{font-style:normal;font-size:20px;line-height:1}
+.tab.active{color:var(--elec)}
+.tab:active{background:var(--bg3)}
+
+/* ─── PAGES ─────────────────────────────────────────────── */
+.page{display:none;max-width:1100px;margin:0 auto;
+  padding:16px calc(14px + var(--sar)) calc(var(--tabbar) + 28px) calc(14px + var(--sal))}
+.page.active{display:block;animation:fade .22s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+.section-head{display:flex;align-items:center;justify-content:space-between;
+  margin:22px 0 10px;gap:10px;flex-wrap:wrap}
+.section-head:first-child{margin-top:0}
+.section-title{font-size:15px;font-weight:650;letter-spacing:-.1px}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--muted)}
+
+/* ─── HERO (итог месяца) ────────────────────────────────── */
+.hero{background:linear-gradient(160deg,#1a1d28,#14171f 60%);border:1px solid var(--border);
+  border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
+.hero-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:2px}
+.hero-label{font-size:12px;color:var(--muted);font-weight:550}
+.hero-value{font-size:34px;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+.hero-sub{font-size:12.5px;color:var(--muted);margin-top:4px}
+.hero-bar{display:flex;height:7px;border-radius:99px;overflow:hidden;margin-top:14px;background:var(--bg4)}
+.hero-bar span{display:block}
+.hero-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px}
+.hero-leg{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2)}
+.hero-leg b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ─── NUDGE / BANNERS ───────────────────────────────────── */
+.nudge{display:flex;align-items:center;gap:11px;padding:12px 14px;border-radius:var(--radius);
+  font-size:13px;margin-bottom:14px;border:1px solid}
+.nudge.info{background:rgba(59,130,246,.09);border-color:rgba(59,130,246,.28);color:#bfdbfe}
+.nudge.warn{background:rgba(245,158,11,.09);border-color:rgba(245,158,11,.28);color:#fcd34d}
+.nudge p{flex:1;min-width:0}
+.import-banner{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);
+  border-radius:var(--radius);padding:14px;margin-bottom:16px;display:flex;align-items:center;
+  justify-content:space-between;gap:12px;flex-wrap:wrap}
+.import-banner p{font-size:13px;color:#fbbf24;flex:1;min-width:140px}
+
+/* ─── CARDS ─────────────────────────────────────────────── */
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+.card-label{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.3px;
+  margin-bottom:7px;display:flex;align-items:center;gap:6px;line-height:1.25}
+.card-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+.card-value{font-size:21px;font-weight:700;letter-spacing:-.4px}
+.card-unit{font-size:12px;font-weight:450;color:var(--muted)}
+.card-sub{font-size:11.5px;color:var(--muted);margin-top:4px}
+
+.heat-card{background:var(--bg2);border:1px solid rgba(239,68,68,.26);border-radius:var(--radius);
+  padding:14px;margin-bottom:14px}
+.heat-card-title{font-size:12px;font-weight:650;color:#fca5a5;margin-bottom:11px;
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+.heat-rooms{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.heat-room{background:var(--bg3);border-radius:var(--radius-sm);padding:10px 11px}
+.heat-room-name{font-size:11px;color:var(--muted);margin-bottom:2px}
+.heat-room-val{font-size:16px;font-weight:650}
+.heat-room-delta{font-size:10.5px;color:var(--muted);margin-top:2px}
+.heat-room.stale{opacity:.55}
+
+.month-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.month-item{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:13px;text-align:left}
+.month-item .val{font-size:18px;font-weight:700}
+.month-item .lbl{font-size:11.5px;color:var(--muted);margin-top:3px}
+.month-item .sub{font-size:12px;color:var(--success);margin-top:3px;font-weight:600}
+.month-total{background:rgba(245,158,11,.09);border:1px solid rgba(245,158,11,.25);
+  border-radius:var(--radius);padding:13px}
+.month-total .val{font-size:20px;font-weight:700;color:var(--elec)}
+.month-total .lbl{font-size:11.5px;color:var(--muted);margin-top:3px}
+
+/* ─── FORMS ─────────────────────────────────────────────── */
+.form-row{display:grid;grid-template-columns:1fr;gap:12px}
+.fg{display:flex;flex-direction:column;gap:5px;min-width:0}
+.fg label{font-size:12px;color:var(--muted);font-weight:550}
+.fg input,.fg select,.fg textarea{
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);padding:12px 13px;font-size:16px;width:100%;font-family:inherit;
+  transition:border-color .15s,background .15s;min-height:46px;appearance:none;-webkit-appearance:none}
+.fg select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' stroke='%23868fa8' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;background-size:13px;padding-right:34px}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--elec);background:var(--bg4)}
+.fg input[type=date]{min-height:46px}
+select option{background:var(--bg3)}
+.hint{font-size:11.5px;color:var(--muted);min-height:14px;line-height:1.35}
+.hint b{color:var(--text2);font-weight:600}
+
+/* сегментный переключатель */
+.seg{display:flex;gap:4px;background:var(--bg3);border:1px solid var(--border);
+  border-radius:12px;padding:3px}
+.seg button{flex:1;background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;
+  padding:9px 6px;border-radius:9px;cursor:pointer;transition:.15s;min-height:40px;font-family:inherit}
+.seg button.active{background:var(--bg4);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.35)}
+
+/* чипы комнат */
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip{background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:99px;
+  padding:8px 13px;font-size:13px;font-weight:550;cursor:pointer;transition:.15s;
+  display:inline-flex;align-items:center;gap:6px;min-height:38px;font-family:inherit}
+.chip.on{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.45);color:#fca5a5}
+.chip.on::before{content:'✓';font-size:11px;font-weight:700}
+.chip:active{transform:scale(.96)}
+
+/* форма отопления — по комнатам */
+.heat-form{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+.heat-row{display:grid;grid-template-columns:1fr 112px;gap:10px;align-items:center;
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 11px}
+.heat-row.filled{border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.07)}
+.heat-row-info{min-width:0}
+.heat-row-name{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px}
+.heat-row-k{font-size:10px;font-weight:600;color:var(--muted);background:var(--bg4);
+  border-radius:5px;padding:1px 5px}
+.heat-row-hint{font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.heat-row input{background:var(--bg);border:1px solid var(--border2);border-radius:9px;
+  color:var(--text);padding:10px;font-size:16px;width:100%;text-align:right;min-height:44px;
+  appearance:none;-webkit-appearance:none;font-family:inherit;font-variant-numeric:tabular-nums}
+.heat-row input:focus{outline:none;border-color:var(--heat)}
+
+/* ─── BUTTONS ───────────────────────────────────────────── */
+.btn{border:none;border-radius:12px;cursor:pointer;font-size:15px;font-weight:650;
+  padding:12px 18px;transition:.15s;white-space:nowrap;font-family:inherit;min-height:46px;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.btn:active{transform:scale(.975)}
+.btn-primary{background:var(--elec);color:#140d00}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid transparent;
+  padding:8px 10px;font-size:13px;min-height:38px}
+.btn-ghost:hover{color:var(--danger)}
+.btn-sm{padding:8px 13px;font-size:13px;min-height:38px;border-radius:10px}
+.btn-block{width:100%}
+.btn-row{display:flex;gap:9px}
+
+/* ─── TABLES → карточки на телефоне ─────────────────────── */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);
+  -webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:var(--bg3)}
+th{padding:10px 12px;text-align:left;color:var(--muted);font-weight:600;font-size:10.5px;
+  text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:7px;
+  font-size:11px;font-weight:600;white-space:nowrap}
+.tag-elec{background:rgba(245,158,11,.15);color:var(--elec)}
+.tag-bath{background:rgba(59,130,246,.15);color:#93c5fd}
+.tag-kitchen{background:rgba(16,185,129,.15);color:#6ee7b7}
+.tag-heat{background:rgba(239,68,68,.15);color:#fca5a5}
+
+/* ─── CHARTS ────────────────────────────────────────────── */
+.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px;margin-bottom:12px}
+.chart-title{font-size:12.5px;font-weight:650;margin-bottom:10px;color:var(--text2)}
+.chart-wrap{position:relative;height:190px}
+
+.period-btns{display:flex;gap:5px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;padding-bottom:2px}
+.period-btns::-webkit-scrollbar{display:none}
+.pb{background:var(--bg3);border:1px solid var(--border);border-radius:9px;color:var(--muted);
+  cursor:pointer;font-size:12.5px;padding:8px 12px;font-family:inherit;white-space:nowrap;
+  min-height:36px;font-weight:550}
+.pb.active{background:var(--elec);border-color:var(--elec);color:#140d00;font-weight:650}
+.view-tabs{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.view-tabs::-webkit-scrollbar{display:none}
+.vt{background:var(--bg3);border:1px solid var(--border);border-radius:9px;color:var(--muted);
+  cursor:pointer;font-size:12.5px;padding:8px 13px;font-family:inherit;white-space:nowrap;
+  min-height:36px;font-weight:550}
+.vt.active{background:var(--elec);border-color:var(--elec);color:#140d00;font-weight:650}
+
+/* ─── MODALS → bottom sheet на телефоне ─────────────────── */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;
+  align-items:flex-end;justify-content:center;backdrop-filter:blur(3px)}
+.modal-bg.open{display:flex;animation:fade .18s ease}
+.modal{background:var(--bg2);border:1px solid var(--border);border-bottom:none;
+  border-radius:22px 22px 0 0;padding:8px 18px calc(18px + var(--sab));width:100%;
+  max-width:560px;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  animation:sheet .26s cubic-bezier(.2,.9,.25,1)}
+@keyframes sheet{from{transform:translateY(100%)}to{transform:none}}
+.modal::before{content:'';display:block;width:38px;height:4px;border-radius:99px;
+  background:var(--border2);margin:0 auto 14px}
+.modal-title{font-size:16px;font-weight:650;margin-bottom:14px}
+.modal-actions{display:flex;gap:10px;margin-top:18px}
+.modal-actions .btn{flex:1}
+
+/* ─── MISC ──────────────────────────────────────────────── */
+.alert{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:12px;
+  padding:11px 14px;font-size:12.5px;color:#fbbf24;margin-bottom:14px;line-height:1.5}
+.muted{color:var(--muted);font-size:12px}
+.empty{text-align:center;padding:34px 16px;color:var(--muted);font-size:13px}
+.sep{border:none;border-top:1px solid var(--border);margin:24px 0 18px}
+
+.stat-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:13px}
+.stat-card-label{font-size:10.5px;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.5px;margin-bottom:6px;font-weight:600}
+.stat-card-main{font-size:19px;font-weight:700;margin-bottom:7px;letter-spacing:-.3px}
+.stat-card-unit{font-size:11.5px;color:var(--muted);font-weight:450}
+.stat-rows{display:flex;flex-direction:column;gap:4px}
+.stat-row{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;gap:6px}
+.stat-row-label{color:var(--muted)}
+.delta-up{color:#f87171;font-weight:650}
+.delta-down{color:#4ade80;font-weight:650}
+.delta-neutral{color:var(--muted);font-weight:650}
+
+.yoy-th{padding:8px 10px;text-align:right;font-size:10.5px;color:var(--muted);
+  white-space:nowrap;border-bottom:1px solid var(--border)}
+.yoy-th:first-child{text-align:left}
+.yoy-td{padding:8px 10px;text-align:right;font-size:12px;border-top:1px solid var(--border);
+  white-space:nowrap;font-variant-numeric:tabular-nums}
+.yoy-td:first-child{text-align:left;color:var(--muted)}
+.yoy-delta-pos{color:#f87171}
+.yoy-delta-neg{color:#4ade80}
+
+.code-block{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;
+  font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:#a5b4fc;white-space:pre;
+  overflow-x:auto;line-height:1.5;max-height:180px;overflow-y:auto}
+.sync-dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--muted);
+  vertical-align:middle;margin-right:5px}
+.sync-dot.ok{background:var(--success)}
+.sync-dot.err{background:var(--danger)}
+
+/* ─── TOASTS ────────────────────────────────────────────── */
+#toasts{position:fixed;left:50%;transform:translateX(-50%);z-index:400;
+  bottom:calc(var(--tabbar) + 14px);display:flex;flex-direction:column;gap:8px;
+  width:calc(100% - 28px);max-width:420px;pointer-events:none}
+.toast{background:#1e2330;border:1px solid var(--border2);border-radius:13px;padding:12px 15px;
+  font-size:13.5px;box-shadow:var(--shadow);animation:toastIn .25s cubic-bezier(.2,.9,.25,1);
+  display:flex;gap:9px;align-items:flex-start;line-height:1.4}
+.toast.ok{border-color:rgba(34,197,94,.45)}
+.toast.err{border-color:rgba(239,68,68,.5)}
+.toast.leaving{animation:toastOut .2s ease forwards}
+@keyframes toastIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateY(8px)}}
+
+/* фидбек о потреблении */
+#consumption-feedback{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.24);
+  border-radius:var(--radius);padding:13px 15px;margin-bottom:14px;font-size:13px;line-height:1.5}
+
+/* ─── РЕСПОНСИВ ─────────────────────────────────────────── */
+@media(max-width:700px){
+  /* таблицы превращаются в карточки */
+  .table-wrap{border:none;border-radius:0;overflow:visible}
+  .table-wrap table,.table-wrap thead,.table-wrap tbody,.table-wrap tr,.table-wrap td{display:block;width:100%}
+  .table-wrap thead{display:none}
+  .table-wrap tr{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+    padding:11px 13px;margin-bottom:9px}
+  .table-wrap td{border:none;padding:3px 0;white-space:normal;display:flex;
+    align-items:center;justify-content:space-between;gap:12px;font-size:13.5px}
+  .table-wrap td:empty{display:none}
+  .table-wrap td[data-l]::before{content:attr(data-l);color:var(--muted);font-size:11.5px;
+    font-weight:600;letter-spacing:.2px;flex:none}
+  .table-wrap td.row-head{justify-content:flex-start;gap:9px;padding-bottom:8px;
+    margin-bottom:6px;border-bottom:1px solid var(--border);font-weight:650;font-size:14px}
+  .table-wrap td.row-actions{justify-content:flex-end;gap:8px;padding-top:9px;margin-top:5px;
+    border-top:1px solid var(--border)}
+  .table-wrap tr.empty-row{background:none;border:none;padding:0}
+  /* многоколоночные блоки внутри модалок — в одну колонку */
+  .modal [style*="grid-template-columns"]{grid-template-columns:1fr!important}
+  .table-wrap td.empty{display:block;text-align:center}
+  /* yoy-таблица остаётся таблицей со скроллом */
+  #yoy-table,#yoy-table thead,#yoy-table tbody,#yoy-table tr,#yoy-table td{display:revert}
+  #yoy-table tr{background:none;border:none;padding:0;margin:0}
+  #yoy-table td{display:table-cell}
+}
+@media(min-width:701px){
+  .cards{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+  .month-grid{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+  .stat-cards{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+  .heat-rooms{grid-template-columns:repeat(auto-fill,minmax(125px,1fr))}
+  .form-row{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));align-items:end}
+  .heat-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .modal-bg{align-items:center}
+  .modal{border-radius:18px;border-bottom:1px solid var(--border);width:460px;
+    padding:20px;max-height:88vh;animation:fade .18s ease}
+  .modal::before{display:none}
+  .modal-actions{justify-content:flex-end}
+  .modal-actions .btn{flex:none}
+  #add-btn{width:auto;min-width:220px;align-self:flex-start}
+  .chart-wrap{height:220px}
+}
+@media(min-width:861px){
+  .tabbar{display:none!important}
+  .topnav{display:flex}
+  :root{--tabbar:0px}
+  .page{padding-bottom:40px}
+  #toasts{bottom:20px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="spinner"></div>
+  <div style="color:var(--muted);font-size:14px">Загружаю…</div>
+</div>
+
+<header class="appbar" style="display:none" id="nav">
+  <div class="appbar-logo">⚡</div>
+  <h1 id="appbar-title">Коммуналка</h1>
+  <nav class="topnav">
+    <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')">Главная</button>
+    <button class="nav-btn" data-page="readings" onclick="showPage('readings')">Показания</button>
+    <button class="nav-btn" data-page="analytics" onclick="showPage('analytics')">Аналитика</button>
+    <button class="nav-btn" data-page="budget" onclick="showPage('budget')">Авансы & Тарифы</button>
+  </nav>
+  <button class="icon-btn" onclick="reloadData()" id="refresh-btn" title="Обновить" aria-label="Обновить">⟳</button>
+  <button class="icon-btn" onclick="openSettings()" title="Настройки" aria-label="Настройки">⚙️</button>
+</header>
+
+<nav class="tabbar" id="tabbar" style="display:none" aria-label="Навигация">
+  <button class="tab active" data-page="dashboard" onclick="showPage('dashboard')"><i>🏠</i>Главная</button>
+  <button class="tab" data-page="readings" onclick="showPage('readings')"><i>✎</i>Показания</button>
+  <button class="tab" data-page="analytics" onclick="showPage('analytics')"><i>📊</i>Аналитика</button>
+  <button class="tab" data-page="budget" onclick="showPage('budget')"><i>💳</i>Платежи</button>
+</nav>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<!-- DASHBOARD -->
+<div id="page-dashboard" class="page">
+  <div id="import-banner" class="import-banner" style="display:none">
+    <p>📦 База данных пустая. Загрузить исторические данные (2022–2026)?</p>
+    <button class="btn btn-primary" onclick="importHistoricalData()" id="import-btn">Загрузить данные</button>
+  </div>
+
+  <!-- Итог месяца -->
+  <div id="hero" class="hero"></div>
+
+  <!-- Напоминание -->
+  <div id="nudge" style="display:none"></div>
+
+  <button class="btn btn-primary btn-block" style="margin-bottom:20px" onclick="showPage('readings')">
+    ＋ Внести показание
+  </button>
+
+  <div class="section-head">
+    <div class="section-title">Текущие показания</div>
+  </div>
+  <div id="current-cards" class="cards"></div>
+  <div id="heat-current-card"></div>
+  <div class="section-head">
+    <div class="section-title" id="month-title">Этот месяц</div>
+  </div>
+  <div id="month-grid" class="month-grid"></div>
+  <div class="section-head"><div class="section-title">Последние записи</div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Дата и тип</th><th>Показание</th><th>Потребление</th><th>Стоимость</th></tr></thead>
+      <tbody id="recent-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- READINGS -->
+<div id="page-readings" class="page">
+  <div class="section-head"><div class="section-title">Внести показание</div></div>
+
+  <!-- выбор счётчика -->
+  <input type="hidden" id="r-type" value="electricity">
+  <div class="period-btns" style="margin-bottom:14px" id="type-chips">
+    <button class="pb active" data-type="electricity"    onclick="pickType('electricity',this)">⚡ Свет</button>
+    <button class="pb" data-type="water_bathroom" onclick="pickType('water_bathroom',this)">🚿 Ванная</button>
+    <button class="pb" data-type="water_kitchen"  onclick="pickType('water_kitchen',this)">🍳 Кухня</button>
+    <button class="pb" data-type="heating"        onclick="pickType('heating',this)">🌡️ Отопление</button>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="form-row">
+      <div class="fg"><label>Дата</label><input type="date" id="r-date" onchange="updateReadingForm()"></div>
+      <div id="single-val-col" class="fg">
+        <label id="r-value-label">Показание счётчика</label>
+        <input type="number" id="r-value" step="0.001" inputmode="decimal" enterkeyhint="done"
+               placeholder="0" oninput="updateHint()">
+        <div class="hint" id="r-hint"></div>
+      </div>
+    </div>
+
+    <!-- ОТОПЛЕНИЕ: по комнатам, каждая необязательна -->
+    <div id="heat-block" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="hint" style="margin:0;color:var(--text2)">
+          Заполните <b>только те комнаты</b>, которые снимаете. Пустые не сохраняются.
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost btn-sm" onclick="fillHeatPrev()" title="Подставить прошлые значения">↩ Прошлые</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearHeat()">Очистить</button>
+        </div>
+      </div>
+      <div id="heat-form" class="heat-form"></div>
+      <div class="hint" id="heat-total-hint" style="margin-top:10px;text-align:right"></div>
+    </div>
+
+    <button class="btn btn-primary btn-block" id="add-btn" style="margin-top:14px" onclick="addReading()">Сохранить</button>
+  </div>
+
+  <div id="consumption-feedback" style="display:none"></div>
+
+  <div class="section-head">
+    <div class="section-title">История</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="openImportModal()">📋 Импорт</button>
+      <select id="filter-type" style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:8px 11px;font-size:13px;min-height:38px" onchange="renderReadingsTable()">
+      <option value="">Все</option>
+      <option value="electricity">⚡ Электричество</option>
+      <option value="water_bathroom">🚿 Вода (ванная)</option>
+      <option value="water_kitchen">🍳 Вода (кухня)</option>
+      <option value="heating_all">🌡️ Отопление (все)</option>
+      <option value="heating_bathroom">🌡️ Отопл. ванная</option>
+      <option value="heating_kitchen">🌡️ Отопл. кухня</option>
+      <option value="heating_bedroom">🌡️ Отопл. спальная</option>
+      <option value="heating_kids">🌡️ Отопл. детская</option>
+      <option value="heating_living">🌡️ Отопл. зал</option>
+    </select>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Дата и тип</th><th>Показание</th><th>Δ</th><th>Дней</th><th>Тариф</th><th>Стоимость</th><th></th></tr></thead>
+      <tbody id="readings-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TARIFFS (hidden standalone page — content moved to budget page) -->
+<div id="page-tariffs" class="page" style="display:none!important"></div>
+
+<!-- ANALYTICS -->
+<div id="page-analytics" class="page">
+
+  <!-- Top controls -->
+  <div class="section-head" style="margin-bottom:14px">
+    <div class="section-title">Аналитика</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <div class="view-tabs" id="analytics-view-tabs">
+        <button class="vt active" onclick="setAnalyticsView('monthly',this)">📊 По месяцам</button>
+        <button class="vt" onclick="setAnalyticsView('yoy',this)">📅 Год к году</button>
+        <button class="vt" onclick="setAnalyticsView('daily',this)">📈 По дням</button>
+      </div>
+      <div class="period-btns" id="period-btns-wrap">
+        <button class="pb active" onclick="setPeriod(6,this)">6 мес</button>
+        <button class="pb" onclick="setPeriod(12,this)">Год</button>
+        <button class="pb" onclick="setPeriod(24,this)">2 года</button>
+        <button class="pb" onclick="setPeriod(0,this)">Всё</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary stat cards -->
+  <div id="analytics-summary" class="stat-cards"></div>
+
+  <!-- VIEW: Monthly -->
+  <div id="view-monthly">
+    <div class="chart-card"><div class="chart-title">⚡ Электричество (кВт·ч / месяц)</div><div class="chart-wrap"><canvas id="chart-elec"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">💧 Вода (м³ / месяц)</div><div class="chart-wrap"><canvas id="chart-water"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">🌡️ Отопление (взв.ед / месяц)</div><div class="chart-wrap"><canvas id="chart-heat"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">💰 Расходы (€ / месяц)</div><div class="chart-wrap"><canvas id="chart-cost"></canvas></div></div>
+  </div>
+
+  <!-- VIEW: Year-over-Year -->
+  <div id="view-yoy" style="display:none">
+    <div id="yoy-year-select-wrap" style="margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:13px;flex-wrap:wrap">
+      <span style="color:var(--muted)">Сравнить:</span>
+      <select id="yoy-year1" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:13px" onchange="renderAnalytics()"></select>
+      <span style="color:var(--muted)">vs</span>
+      <select id="yoy-year2" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:13px" onchange="renderAnalytics()"></select>
+      <div style="display:flex;gap:4px;margin-left:auto">
+        <button class="pb active" id="yoy-mode-full" onclick="setYoyMode('full',this)">Полный год</button>
+        <button class="pb" id="yoy-mode-ytd"  onclick="setYoyMode('ytd',this)">YTD</button>
+      </div>
+    </div>
+    <div class="chart-card"><div class="chart-title">⚡ Электричество — год к году (кВт·ч)</div><div class="chart-wrap" style="height:220px"><canvas id="yoy-elec"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">💧 Вода — год к году (м³)</div><div class="chart-wrap" style="height:220px"><canvas id="yoy-water"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">🌡️ Отопление — год к году (взв.ед)</div><div class="chart-wrap" style="height:220px"><canvas id="yoy-heat"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">💰 Расходы — год к году (€)</div><div class="chart-wrap" style="height:220px"><canvas id="yoy-cost"></canvas></div></div>
+    <!-- YoY Table -->
+    <div class="chart-card">
+      <div class="chart-title" style="margin-bottom:10px">📋 Таблица по месяцам</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px" id="yoy-table"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW: Daily rates -->
+  <div id="view-daily" style="display:none">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--muted)">Тип:</span>
+      <select id="daily-type" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:13px" onchange="renderDailyView()">
+        <option value="electricity">⚡ Электричество</option>
+        <option value="water_bathroom">🚿 Вода (ванная)</option>
+        <option value="water_kitchen">🍳 Вода (кухня)</option>
+        <option value="heating">🌡️ Отопление (все комнаты)</option>
+      </select>
+      <div class="period-btns">
+        <button class="pb active" id="dpb-6"  onclick="setDailyPeriod(6,this)">6 мес</button>
+        <button class="pb" id="dpb-12" onclick="setDailyPeriod(12,this)">Год</button>
+        <button class="pb" id="dpb-24" onclick="setDailyPeriod(24,this)">2 года</button>
+        <button class="pb" id="dpb-0"  onclick="setDailyPeriod(0,this)">Всё</button>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title" id="daily-chart-title">Потребление в день между показаниями</div>
+      <div class="chart-wrap" style="height:260px"><canvas id="chart-daily"></canvas></div>
+    </div>
+    <div class="chart-card" id="daily-rooms-card" style="display:none">
+      <div class="chart-title">🌡️ Отопление по комнатам (ед/день)</div>
+      <div class="chart-wrap" style="height:260px"><canvas id="chart-daily-rooms"></canvas></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL: Tariff -->
+<div class="modal-bg" id="tariff-modal">
+  <div class="modal">
+    <div class="modal-title" id="t-modal-title">Новый тариф</div>
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div class="fg"><label>Действует с даты</label><input type="date" id="t-date"></div>
+      <div class="fg"><label>Тип</label>
+        <select id="t-type">
+          <option value="electricity">⚡ Электричество</option>
+          <option value="water">💧 Вода</option>
+          <option value="heating">🌡️ Отопление</option>
+        </select>
+      </div>
+      <div class="fg"><label>Фиксированная плата (€/год)</label><input type="number" id="t-fixed" step="0.01" placeholder="0.00"></div>
+      <div class="fg"><label>Цена за единицу (€/ед)</label>
+        <input type="number" id="t-rate" step="0.0001" placeholder="0.0000">
+        <div class="hint">Эл. ≈ 0.32 €/кВт·ч · Вода ≈ 11.35 €/м³ · Отопл. ≈ 0.12 €/взв.ед</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeTariffModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveTariff()" id="save-tariff-btn">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Import Tariffs -->
+<div class="modal-bg" id="tariff-import-modal">
+  <div class="modal" style="width:620px;max-width:98vw">
+    <div class="modal-title">📋 Импорт тарифов из таблицы</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      Скопируйте строки тарифов и вставьте ниже.<br>
+      Формат (Tab): <strong>Дата · Тип · Фикс.плата (€) · Цена за ед. (€)</strong><br>
+      Тип: Электричество / Вода / Отопление
+    </div>
+    <textarea id="tariff-import-text"
+      placeholder="01.01.2022&#9;Электричество&#9;82,56&#9;0,424&#10;01.01.2022&#9;Вода&#9;126,85&#9;18,05&#10;01.01.2022&#9;Отопление&#9;165,67&#9;0,1232"
+      style="width:100%;height:140px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px;font-size:13px;resize:vertical;font-family:monospace"
+      oninput="previewTariffImport()"></textarea>
+    <div id="tariff-import-stats" style="font-size:12px;color:var(--muted);margin:8px 0"></div>
+    <div id="tariff-import-errors" style="display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px;font-size:12px;color:#fca5a5;margin-bottom:8px;max-height:70px;overflow-y:auto"></div>
+    <div id="tariff-import-preview-wrap" style="display:none;max-height:200px;overflow-y:auto;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="background:var(--bg3);position:sticky;top:0">
+          <tr>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted)">С даты</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted)">Тип</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted)">Фикс. (€/год)</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted)">Цена (€/ед)</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted)">Статус</th>
+          </tr>
+        </thead>
+        <tbody id="tariff-import-preview-body"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeTariffImportModal()">Отмена</button>
+      <button class="btn btn-primary" id="do-tariff-import-btn" onclick="doTariffImport()" disabled>Загрузить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Import from Sheet -->
+<div class="modal-bg" id="import-modal">
+  <div class="modal" style="width:700px;max-width:98vw">
+    <div class="modal-title">📋 Импорт из Google Sheets</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      Скопируйте строки из листа <strong>Data</strong> (колонки: Дата · Type · Room · Показатель) и вставьте ниже.<br>
+      Строка-заголовок обнаруживается автоматически. Значения через Tab.
+    </div>
+    <textarea id="import-text" placeholder="01.11.2024&#9;Отопление&#9;Ванная&#9;0&#10;01.11.2024&#9;Отопление&#9;Кухня&#9;0&#10;12.04.2026&#9;Электричество&#9;&#9;12636"
+      style="width:100%;height:160px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px;font-size:13px;resize:vertical;font-family:monospace"
+      oninput="previewImport()"></textarea>
+    <div id="import-stats" style="font-size:12px;color:var(--muted);margin:8px 0"></div>
+    <div id="import-errors" style="display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px;font-size:12px;color:#fca5a5;margin-bottom:8px;max-height:80px;overflow-y:auto"></div>
+    <div id="import-preview-wrap" style="display:none;max-height:220px;overflow-y:auto;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="background:var(--bg3);position:sticky;top:0">
+          <tr><th style="padding:7px 10px;text-align:left;color:var(--muted)">Дата</th><th style="padding:7px 10px;text-align:left;color:var(--muted)">Тип</th><th style="padding:7px 10px;text-align:left;color:var(--muted)">Значение</th><th style="padding:7px 10px;text-align:left;color:var(--muted)">Статус</th></tr>
+        </thead>
+        <tbody id="import-preview-body"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeImportModal()">Отмена</button>
+      <button class="btn btn-primary" id="do-import-btn" onclick="doImport()" disabled>Загрузить</button>
+    </div>
+  </div>
+</div>
+
+<!-- BUDGET PAGE -->
+<div id="page-budget" class="page">
+
+  <!-- ── Инфляция (глобально для обоих блоков) ──────── -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap">
+    <span style="font-size:13px;color:var(--muted)">📈 Инфляция / прогноз:</span>
+    <input type="number" id="inflation-input" step="1" min="-50" max="100" value="0"
+      style="width:60px;font-size:13px;text-align:center;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 6px"
+      oninput="setInflation(this.value)" placeholder="0">
+    <span style="font-size:13px;color:var(--muted)">%</span>
+    <span style="font-size:11px;color:var(--muted);margin-left:4px">— применяется к прогнозу затрат и авансов</span>
+  </div>
+
+  <!-- ── Блок: Электричество ──────────────────────────── -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <div class="section-title" style="margin:0">⚡ Электричество</div>
+    <span style="font-size:12px;color:var(--muted)">период от:</span>
+    <input type="date" id="elec-period-from"
+      style="font-size:12px;padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text)"
+      onchange="setElecPeriodFrom(this.value)">
+    <span style="font-size:11px;color:var(--muted)" id="elec-period-hint"></span>
+  </div>
+  <div id="elec-card-wrap" style="margin-bottom:28px"></div>
+
+  <!-- ── Блок: Коммуналка NK ──────────────────────────── -->
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+    <div class="section-title" style="margin:0;flex:1;min-width:120px">🏠 Коммуналка (NK)</div>
+    <div id="budget-year-selector" style="display:flex;gap:5px;flex-wrap:wrap"></div>
+  </div>
+  <div id="nk-cards" class="cards" style="grid-template-columns:repeat(auto-fill,minmax(270px,1fr));margin-bottom:28px"></div>
+
+  <div class="section-head" style="margin-top:4px">
+    <div class="section-title">Авансы (ежемесячные платежи)</div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-secondary btn-sm" onclick="openAdvanceImportModal()">📋 Импорт</button>
+      <button class="btn btn-primary btn-sm" onclick="openAdvanceModal()">+ Добавить</button>
+    </div>
+  </div>
+  <div class="table-wrap" style="margin-bottom:20px">
+    <table>
+      <thead><tr><th>Тип / с даты</th><th>€ / мес</th><th></th></tr></thead>
+      <tbody id="advances-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="section-head">
+    <div class="section-title">Годовые расчёты (Nebenkostenabrechnung)</div>
+    <button class="btn btn-primary btn-sm" onclick="openSettlementModal()">+ Добавить</button>
+  </div>
+  <div class="table-wrap" style="margin-bottom:28px">
+    <table>
+      <thead><tr>
+        <th>Тип / год</th><th>NK итого</th>
+        <th>💧 Вода (фикс+пер.)</th><th>🌡️ Отопл. (фикс+пер.)</th><th>🏠 Прочее + Grundst.</th>
+        <th>Корректировка</th><th></th>
+      </tr></thead>
+      <tbody id="settlements-tbody"></tbody>
+    </table>
+  </div>
+
+  <hr class="sep">
+  <div class="alert" style="margin-bottom:14px">💡 Тарифы применяются с указанной даты. Изменение задним числом пересчитывает все показания автоматически.</div>
+  <div class="section-head">
+    <div class="section-title">Тарифы</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary btn-sm" onclick="openTariffImportModal()">📋 Импорт</button>
+      <button class="btn btn-primary btn-sm" onclick="openTariffModal()">+ Добавить</button>
+    </div>
+  </div>
+  <div class="table-wrap" style="margin-bottom:20px">
+    <table>
+      <thead><tr><th>Тип / с даты</th><th>Фикс. плата (€/год)</th><th>Цена за ед. (€)</th><th>Единица</th><th></th></tr></thead>
+      <tbody id="tariffs-tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- MODAL: Add Advance -->
+<div class="modal-bg" id="advance-modal">
+  <div class="modal">
+    <div class="modal-title">Новый аванс</div>
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div class="fg"><label>С даты</label><input type="date" id="adv-date"></div>
+      <div class="fg"><label>Тип</label>
+        <select id="adv-type">
+          <option value="electricity">⚡ Электричество</option>
+          <option value="kommunalka">🏠 Коммуналка (NK + Kaltmiete)</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Сумма в месяц (€)</label>
+        <input type="number" id="adv-amount" step="0.01" placeholder="215.00">
+        <div class="hint">Ежемесячный аванс. При изменении ставки — добавьте новую запись</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeAdvanceModal()">Отмена</button>
+      <button class="btn btn-primary" id="save-adv-btn" onclick="saveAdvance()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Add Settlement -->
+<div class="modal-bg" id="settlement-modal">
+  <div class="modal" style="width:540px;max-width:98vw">
+    <div class="modal-title">Годовой расчёт</div>
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="fg"><label>Год расчёта</label>
+          <input type="number" id="sett-year" placeholder="2024" min="2020" max="2030" oninput="onSettYearChange()">
+        </div>
+        <div class="fg"><label>Дата получения</label><input type="date" id="sett-date"></div>
+      </div>
+      <div class="fg"><label>Тип</label>
+        <select id="sett-type" onchange="updateSettlementFields()">
+          <option value="kommunalka">🏠 Коммуналка (Nebenkosten)</option>
+          <option value="electricity">⚡ Электричество</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="fg">
+          <label>NK итого за год (€)</label>
+          <input type="number" id="sett-total" step="0.01" placeholder="2190.97" oninput="onSettTotalChange()">
+          <div class="hint" id="sett-total-hint">Сумма из Nebenkostenabrechnung</div>
+        </div>
+        <div class="fg" id="sett-grundsteuer-wrap">
+          <label>Grundsteuer за год (€)</label>
+          <input type="number" id="sett-grundsteuer" step="0.01" placeholder="137.09" oninput="onSettCalc()">
+          <div class="hint">Отдельная квитанция (Stadt)</div>
+        </div>
+      </div>
+
+      <!-- NK breakdown -->
+      <div id="sett-komm-fields">
+        <div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:8px">
+          🌡️ Отопление + Warmwasser (vryon / Heizkosten)
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+          <div class="fg">
+            <label>Grundkosten (€)</label>
+            <input type="number" id="sett-heat-fixed" step="0.01" placeholder="192.66" oninput="onSettCalc()">
+            <div class="hint">Фиксированная часть (за м²)</div>
+          </div>
+          <div class="fg">
+            <label>Verbrauchskosten (€)</label>
+            <input type="number" id="sett-heat-var" step="0.01" placeholder="242.66" oninput="onSettCalc()">
+            <div class="hint">Переменная (за единицы)</div>
+          </div>
+          <div class="fg">
+            <label>Итого отопление</label>
+            <input type="number" id="sett-heat" step="0.01" placeholder="435.32" oninput="onSettCalc()" style="font-weight:600">
+            <div class="hint" id="sett-heat-hint"></div>
+          </div>
+        </div>
+
+        <div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:8px">
+          💧 Вода (Kaltwasser + Abwasser + Warmwasser)
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+          <div class="fg">
+            <label>Grundkosten (€)</label>
+            <input type="number" id="sett-water-fixed" step="0.01" placeholder="98.63" oninput="onSettCalc()">
+          </div>
+          <div class="fg">
+            <label>Verbrauchskosten (€)</label>
+            <input type="number" id="sett-water-var" step="0.01" placeholder="411.24" oninput="onSettCalc()">
+          </div>
+          <div class="fg">
+            <label>Итого вода</label>
+            <input type="number" id="sett-water" step="0.01" placeholder="509.87" oninput="onSettCalc()" style="font-weight:600">
+            <div class="hint" id="sett-water-hint"></div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:8px;font-size:13px">
+          <div>🏠 Прочее (Grundsteuer, уборка…):
+            <strong id="sett-other-display">—</strong>
+          </div>
+          <div style="color:var(--muted);font-size:11px">= итого − вода − отопление<br>
+            <span id="sett-pct-display"></span>
+          </div>
+        </div>
+        <div id="sett-calc-hint" style="font-size:11px;color:var(--muted);margin-top:6px;padding:5px 8px;background:var(--bg2);border-radius:6px;display:none"></div>
+      </div>
+
+      <div class="fg">
+        <label>Корректировка (€)</label>
+        <input type="number" id="sett-correction" step="0.01" placeholder="-50.00">
+        <div class="hint">Минус (−) = возврат вам · Плюс (+) = доплата от вас</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeSettlementModal()">Отмена</button>
+      <button class="btn btn-primary" id="save-sett-btn" onclick="saveSettlement()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Import Advances -->
+<div class="modal-bg" id="advance-import-modal">
+  <div class="modal" style="width:520px;max-width:98vw">
+    <div class="modal-title">Импорт авансов</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      Вставьте данные из таблицы (разделители: Tab или точка с запятой).<br>
+      Колонки: <strong>Дата · Тип · Сумма/мес</strong><br>
+      Дата: ДД.ММ.ГГГГ · Тип: <code>electricity</code> или <code>kommunalka</code>
+    </div>
+    <div class="fg">
+      <textarea id="adv-import-text" rows="8" style="font-family:monospace;font-size:12px"
+        placeholder="01.01.2024	electricity	50.00
+01.03.2024	electricity	45.00
+01.01.2024	kommunalka	160.00
+01.10.2025	kommunalka	215.00"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin:8px 0">
+      <button class="btn btn-secondary btn-sm" onclick="previewAdvanceImport()">Проверить</button>
+      <span id="adv-import-stats" style="font-size:12px"></span>
+    </div>
+    <div id="adv-import-errors" style="display:none;font-size:11px;color:var(--heat);background:rgba(239,68,68,.08);border-radius:6px;padding:8px;margin-bottom:6px;max-height:100px;overflow-y:auto"></div>
+    <div id="adv-import-preview-wrap" style="display:none;max-height:180px;overflow-y:auto;margin-bottom:8px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--bg3)">
+          <th style="padding:5px 8px;text-align:left">С даты</th>
+          <th style="padding:5px 8px;text-align:left">Тип</th>
+          <th style="padding:5px 8px;text-align:left">€/мес</th>
+          <th style="padding:5px 8px;text-align:left">Статус</th>
+        </tr></thead>
+        <tbody id="adv-import-preview-body"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeAdvanceImportModal()">Отмена</button>
+      <button class="btn btn-primary" id="do-adv-import-btn" disabled onclick="doAdvanceImport()">Загрузить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Settings -->
+<div class="modal-bg" id="settings-modal">
+  <div class="modal" style="width:540px;max-width:98vw">
+    <div class="modal-title">⚙️ Настройки</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="fg">
+        <label style="display:flex;align-items:center;gap:7px">
+          Google Sheets — URL скрипта
+          <span id="sync-status"></span>
+        </label>
+        <input type="url" id="s-gsheets-url" placeholder="https://script.google.com/macros/s/.../exec"
+          style="font-size:12px">
+        <div class="hint">Каждое сохранённое показание будет записываться на лист «Из приложения»</div>
+      </div>
+
+      <div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:7px;color:var(--text)">
+          Как настроить (один раз):
+        </div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:9px">
+          1. Откройте таблицу → <strong style="color:var(--text)">Расширения → Apps Script</strong><br>
+          2. Удалите весь код, вставьте код ниже → сохраните (Ctrl+S)<br>
+          3. Нажмите <strong style="color:var(--text)">«Развернуть» → «Новое развёртывание»</strong><br>
+          4. Тип: <em>Веб-приложение</em> · Доступ: <em>Все (в т.ч. анонимные)</em><br>
+          5. Скопируйте URL и вставьте в поле выше
+        </div>
+        <div class="code-block">function doGet(e) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const rows = JSON.parse(decodeURIComponent(e.parameter.data || '[]'));
+    const arr = Array.isArray(rows) ? rows : [rows];
+
+    if (e.parameter.sheet === 'tariffs') {
+      let sh = ss.getSheetByName('Тарифы (приложение)');
+      if (!sh) {
+        sh = ss.insertSheet('Тарифы (приложение)');
+        sh.appendRow(['Изменено','С даты','Тип','Фикс. плата (€/год)','Цена за ед. (€)','Действие']);
+        sh.getRange(1,1,1,6).setFontWeight('bold').setBackground('#fef3c7');
+      }
+      arr.forEach(r => sh.appendRow([new Date(), r.effective_from, r.type, r.fixed_cost, r.rate, r.action||'']));
+    } else {
+      let sh = ss.getSheetByName('Из приложения');
+      if (!sh) {
+        sh = ss.insertSheet('Из приложения');
+        sh.appendRow(['Внесено','Дата','Тип','Комната','Показание','Δ потр.','Стоимость €']);
+        sh.getRange(1,1,1,7).setFontWeight('bold').setBackground('#e8f0fe');
+      }
+      arr.forEach(r => sh.appendRow([new Date(), r.date, r.type, r.room||'', r.value, r.delta||'', r.cost||'']));
+    }
+    return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT);
+  } catch(err) {
+    return ContentService.createTextOutput('err:'+err.message).setMimeType(ContentService.MimeType.TEXT);
+  }
+}</div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="copyScriptCode()">📋 Скопировать код</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeSettings()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Edit Reading -->
+<div class="modal-bg" id="reading-modal">
+  <div class="modal">
+    <div class="modal-title">Редактировать показание</div>
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div class="fg"><label>Дата</label><input type="date" id="e-date"></div>
+      <div class="fg"><label>Тип</label>
+        <select id="e-type">
+          <option value="electricity">⚡ Электричество</option>
+          <option value="water_bathroom">🚿 Вода (ванная)</option>
+          <option value="water_kitchen">🍳 Вода (кухня)</option>
+          <option value="heating_bathroom">🌡️ Отопл. ванная</option>
+          <option value="heating_kitchen">🌡️ Отопл. кухня</option>
+          <option value="heating_bedroom">🌡️ Отопл. спальная</option>
+          <option value="heating_kids">🌡️ Отопл. детская</option>
+          <option value="heating_living">🌡️ Отопл. зал</option>
+        </select>
+      </div>
+      <div class="fg"><label>Показание</label><input type="number" id="e-value" step="0.001"></div>
+      <div class="fg" style="flex-direction:row;align-items:center;gap:8px">
+        <input type="checkbox" id="e-reset" style="width:16px;height:16px;cursor:pointer">
+        <label for="e-reset" style="font-size:13px;cursor:pointer">Замена счётчика (сброс на новое значение)</label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeReadingModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveEditReading()" id="save-reading-btn">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://acsulelspgoauttyrhdd.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_vfuvG6DNkM0qDRcKmeA1Uw_viuiyKZK';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── TYPE CONFIG ───────────────────────────────────────────────
+const TYPES = {
+  electricity:      {label:'⚡ Электричество',  unit:'кВт·ч', tariff:'electricity', factor:1,     tag:'tag-elec',    group:'electricity', dec:0},
+  water_bathroom:   {label:'🚿 Вода (ванная)',   unit:'м³',    tariff:'water',       factor:1,     tag:'tag-bath',    group:'water',       dec:3},
+  water_kitchen:    {label:'🍳 Вода (кухня)',    unit:'м³',    tariff:'water',       factor:1,     tag:'tag-kitchen', group:'water',       dec:3},
+  heating_bathroom: {label:'🌡️ Ванная',          unit:'ед',    tariff:'heating',     factor:0.942, tag:'tag-heat',    group:'heating',     dec:0, room:'Ванная'},
+  heating_kitchen:  {label:'🌡️ Кухня',           unit:'ед',    tariff:'heating',     factor:1.314, tag:'tag-heat',    group:'heating',     dec:0, room:'Кухня'},
+  heating_bedroom:  {label:'🌡️ Спальная',        unit:'ед',    tariff:'heating',     factor:2.052, tag:'tag-heat',    group:'heating',     dec:0, room:'Спальная'},
+  heating_kids:     {label:'🌡️ Детская',         unit:'ед',    tariff:'heating',     factor:1.314, tag:'tag-heat',    group:'heating',     dec:0, room:'Детская'},
+  heating_living:   {label:'🌡️ Зал',             unit:'ед',    tariff:'heating',     factor:3.502, tag:'tag-heat',    group:'heating',     dec:0, room:'Зал'},
+};
+const HEATING_TYPES = ['heating_bathroom','heating_kitchen','heating_bedroom','heating_kids','heating_living'];
+const HEAT_IDS     = ['h-bath','h-kitchen','h-bedroom','h-kids','h-living'];
+const TARIFF_UNITS = {electricity:'кВт·ч', water:'м³', heating:'взв.ед'};
+
+// ─── STATE ────────────────────────────────────────────────────
+let readings = [], tariffs = [], advances = [], settlements = [];
+let editingTariffId = null, editingReadingId = null;
+let analyticsPeriod = 6, charts = {};
+
+// ─── SUPABASE ─────────────────────────────────────────────────
+async function loadAll() {
+  const [r,t,s,adv,sett] = await Promise.all([
+    sb.from('readings').select('*').order('date',{ascending:true}).order('id',{ascending:true}),
+    sb.from('tariffs').select('*').order('effective_from',{ascending:true}),
+    sb.from('settings').select('*'),
+    sb.from('advances').select('*').order('effective_from',{ascending:true}),
+    sb.from('settlements').select('*').order('period_year',{ascending:true}),
+  ]);
+  readings    = r.data    || [];
+  tariffs     = t.data    || [];
+  advances    = adv.data  || [];
+  settlements = sett.data || [];
+  for (const row of (s.data || [])) localStorage.setItem(row.key, row.value);
+}
+
+async function init() {
+  try {
+    await loadAll();
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('nav').style.display = 'flex';
+    document.getElementById('tabbar').style.display = 'grid';
+    document.getElementById('page-dashboard').classList.add('active');
+    setDefaultDate();
+    if (readings.length === 0) document.getElementById('import-banner').style.display = 'flex';
+    renderDashboard();
+    // ярлык с рабочего стола: /?p=readings
+    const p = new URLSearchParams(location.search).get('p');
+    if (p && document.getElementById('page-'+p)) showPage(p);
+  } catch(e) {
+    document.getElementById('loader').innerHTML =
+      `<div style="color:var(--heat);font-size:14px;text-align:center;padding:24px;max-width:300px">
+        Нет связи с базой.<br>${e.message}<br><br>
+        <small style="color:var(--muted)">Проверьте интернет или выполните SQL-миграцию в Supabase</small><br><br>
+        <button class="btn btn-secondary btn-sm" onclick="location.reload()">Повторить</button>
+      </div>`;
+  }
+}
+
+// ─── PWA ──────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  });
+}
+window.addEventListener('online',  ()=>toast('Связь восстановлена','ok'));
+window.addEventListener('offline', ()=>toast('Нет сети — данные не сохранятся','err'));
+
+// ─── SEED DATA ────────────────────────────────────────────────
+const SEED_TARIFFS = [
+  {effective_from:'2022-01-01',type:'electricity',fixed_cost:82.56, rate:0.424},
+  {effective_from:'2022-12-01',type:'electricity',fixed_cost:154.83,rate:0.43},
+  {effective_from:'2023-04-18',type:'electricity',fixed_cost:82.56, rate:0.34},
+  {effective_from:'2025-01-01',type:'electricity',fixed_cost:92.52, rate:0.3228},
+  {effective_from:'2022-01-01',type:'water',      fixed_cost:126.85,rate:18.05},
+  {effective_from:'2024-01-01',type:'water',      fixed_cost:98.63, rate:11.35},
+  {effective_from:'2022-01-01',type:'heating',    fixed_cost:165.67,rate:0.1232},
+  {effective_from:'2024-01-01',type:'heating',    fixed_cost:192.66,rate:0.12},
+];
+
+function buildSeedReadings() {
+  const R = [];
+  const e  = (d,v)       => R.push({date:d,type:'electricity',    value:v,is_reset:false});
+  const wb = (d,v,r=false)=> R.push({date:d,type:'water_bathroom', value:v,is_reset:r});
+  const wk = (d,v,r=false)=> R.push({date:d,type:'water_kitchen',  value:v,is_reset:r});
+  const h  = (d,b,k,r,ch,l)=>{
+    R.push({date:d,type:'heating_bathroom',value:b, is_reset:false});
+    R.push({date:d,type:'heating_kitchen', value:k, is_reset:false});
+    R.push({date:d,type:'heating_bedroom', value:r, is_reset:false});
+    R.push({date:d,type:'heating_kids',    value:ch,is_reset:false});
+    R.push({date:d,type:'heating_living',  value:l, is_reset:false});
+  };
+
+  // ── Электричество ─────────────────────────────────────────
+  e('2022-12-01',7701);  e('2023-11-27',8675);  e('2023-12-09',8708);  e('2023-12-31',8804);
+  e('2024-04-16',9147);  e('2024-11-24',9833);  e('2024-11-30',9863);  e('2024-12-07',9918);
+  e('2024-12-14',9974);  e('2024-12-21',10043); e('2024-12-28',10084); e('2025-01-05',10162);
+  e('2025-01-11',10219); e('2025-01-18',10270); e('2025-01-25',10323); e('2025-02-01',10372);
+  e('2025-02-08',10421); e('2025-02-16',10480); e('2025-02-22',10516); e('2025-03-01',10551);
+  e('2025-03-10',10606); e('2025-03-15',10636); e('2025-03-22',10674); e('2025-03-29',10709);
+  e('2025-04-05',10743); e('2025-04-14',10789); e('2025-04-16',10790); e('2025-04-24',10811);
+  e('2025-05-03',10845); e('2025-05-10',10874); e('2025-05-18',10906); e('2025-06-11',11017);
+  e('2025-07-20',11145); e('2025-08-03',11183); e('2025-09-14',11310); e('2025-10-04',11390);
+  e('2025-11-01',11527); e('2025-11-16',11633); e('2025-11-23',11666); e('2025-11-30',11760);
+  e('2025-12-07',11774); e('2025-12-19',11860); e('2025-12-30',11949); e('2026-01-03',11965);
+  e('2026-01-10',12029); e('2026-01-18',12088); e('2026-01-25',12151); e('2026-02-01',12212);
+  e('2026-02-07',12264); e('2026-02-14',12306); e('2026-02-21',12367); e('2026-02-28',12407);
+  e('2026-03-08',12442); e('2026-03-15',12480); e('2026-03-22',12520); e('2026-04-04',12580);
+  e('2026-04-12',12636);
+
+  // ── Вода ванная ───────────────────────────────────────────
+  wb('2022-12-01',3);    wb('2023-11-27',24);   wb('2023-12-09',25);   wb('2023-12-31',28.5);
+  wb('2024-11-24',18,true); // замена счётчика
+  wb('2024-11-30',18.25);wb('2024-12-07',18.67);wb('2024-12-14',19.19);wb('2024-12-21',19.86);
+  wb('2024-12-28',20.19);wb('2025-01-05',21.01);wb('2025-01-11',21.44);wb('2025-01-18',21.89);
+  wb('2025-01-25',22.72);wb('2025-02-01',23.29);wb('2025-02-08',23.81);wb('2025-02-16',24.55);
+  wb('2025-02-22',25.12);wb('2025-03-01',25.6); wb('2025-03-10',26.8); wb('2025-03-15',27.19);
+  wb('2025-03-22',28.03);wb('2025-03-29',28.82);wb('2025-04-05',29.48);wb('2025-04-16',30.47);
+  wb('2025-04-24',31.4); wb('2025-05-03',32.35);wb('2025-05-10',32.98);wb('2025-05-18',33.67);
+  wb('2025-06-11',35.52);wb('2025-07-20',38.48);wb('2025-08-03',39.46);wb('2025-09-14',42.68);
+  wb('2025-10-04',44.7); wb('2025-11-01',47.24);wb('2025-11-16',48.4); wb('2025-11-23',49.1);
+  wb('2025-11-30',49.6); wb('2025-12-07',50.57);wb('2025-12-19',51.75);wb('2025-12-30',52.84);
+  wb('2026-01-03',52.95);wb('2026-01-10',53.69);wb('2026-01-18',54.61);wb('2026-01-25',55.3);
+  wb('2026-02-01',56);   wb('2026-02-07',56.58);wb('2026-02-14',57.24);wb('2026-02-21',57.89);
+  wb('2026-02-28',58.6); wb('2026-03-08',59);   wb('2026-03-15',59.64);wb('2026-03-22',60.28);
+  wb('2026-04-04',61.64);wb('2026-04-12',62.2);
+
+  // ── Вода кухня (с заменой счётчика 10.01.2026) ───────────
+  wk('2022-12-01',1);    wk('2023-11-27',7);    wk('2023-12-09',7);    wk('2023-12-31',9);
+  wk('2024-11-24',17);   wk('2024-11-30',17);   wk('2024-12-07',17.25);wk('2024-12-14',17.49);
+  wk('2024-12-21',17.71);wk('2024-12-28',17.85);wk('2025-01-05',18.2); wk('2025-01-11',18.47);
+  wk('2025-01-18',18.69);wk('2025-01-25',18.95);wk('2025-02-01',19.18);wk('2025-02-08',19.4);
+  wk('2025-02-16',19.66);wk('2025-02-22',19.91);wk('2025-03-01',20.13);wk('2025-03-10',20.51);
+  wk('2025-03-15',20.74);wk('2025-03-22',21);   wk('2025-03-29',21.27);wk('2025-04-05',21.64);
+  wk('2025-04-16',22);   wk('2025-04-24',22.16);wk('2025-05-03',22.5); wk('2025-05-10',22.65);
+  wk('2025-05-18',22.93);wk('2025-06-11',23.82);wk('2025-07-20',24.79);wk('2025-08-03',25.11);
+  wk('2025-09-14',26.25);wk('2025-10-04',26.74);wk('2025-11-01',27.71);wk('2025-11-16',28.17);
+  wk('2025-11-23',28.42);wk('2025-11-30',28.57);wk('2025-12-07',28.92);wk('2025-12-19',29.29);
+  wk('2025-12-30',29.94);wk('2026-01-03',30);
+  wk('2026-01-10',0.39,true); // замена счётчика
+  wk('2026-01-18',0.788);wk('2026-01-25',1.3);  wk('2026-02-01',1.46); wk('2026-02-07',1.79);
+  wk('2026-02-14',2.16); wk('2026-02-21',2.44); wk('2026-02-28',2.83); wk('2026-03-08',3.108);
+  wk('2026-03-15',3.42); wk('2026-03-22',3.69); wk('2026-04-04',4.4);  wk('2026-04-12',4.65);
+
+  // ── Отопление (bath, kitchen, bedroom, kids, living) ──────
+  //           date         bath  kitch  bedrm  kids  living
+  h('2024-11-01',             0,    0,    0,    0,    0);
+  h('2024-11-24',             0,    3,   18,   23,   47);
+  h('2024-11-30',             0,    3,   18,   25,   55);
+  h('2024-12-07',             4,   12,   22,   30,   74);
+  h('2024-12-14',            14,   16,   33,   54,   81);
+  h('2024-12-21',            15,   18,   37,   61,   94);
+  h('2024-12-28',            28,   19,   41,   83,  105);
+  h('2024-12-31',            32,   19,   48,   93,  120);
+  h('2025-01-05',            36,   23,   48,   94,  137);
+  h('2025-01-11',            37,   23,   58,   95,  139);
+  h('2025-01-18',            43,   26,   76,  108,  171);
+  h('2025-01-25',            46,   26,   86,  129,  203);
+  h('2025-02-01',            47,   26,   89,  129,  205);
+  h('2025-02-08',            53,   30,  122,  129,  232);
+  h('2025-02-16',            57,   51,  130,  129,  269);
+  h('2025-02-22',            63,   81,  152,  129,  324);
+  h('2025-03-01',            67,   92,  162,  129,  332);
+  h('2025-03-10',            77,  111,  172,  129,  360);
+  h('2025-03-15',            80,  112,  173,  129,  365);
+  h('2025-03-22',            88,  113,  185,  129,  382);
+  h('2025-03-29',            88,  113,  188,  129,  382);
+  h('2025-10-26',            88,  113,  188,  129,  382);
+  h('2025-11-01',            88,  113,  189,  129,  382);
+  h('2025-11-16',            88,  114,  199,  129,  485);
+  h('2025-11-23',            94,  126,  216,  135,  519);
+  h('2025-11-30',           116,  130,  247,  154,  539);
+  h('2025-12-07',           133,  133,  256,  172,  540);
+  h('2025-12-19',           155,  133,  260,  175,  543);
+  h('2025-12-31',           173,  164,  289,  207,  564);
+  h('2026-01-03',           175,  177,  298,  219,  574);
+  h('2026-01-10',           179,  204,  315,  245,  617);
+  h('2026-01-18',           186,  240,  326,  261,  635);
+  h('2026-01-25',           186,  254,  339,  261,  667);
+  h('2026-02-01',           186,  263,  343,  261,  687);
+  h('2026-02-07',           186,  264,  350,  261,  724);
+  h('2026-02-14',           186,  264,  351,  261,  758);
+  h('2026-02-21',           186,  268,  357,  261,  776);
+  h('2026-02-28',           187,  268,  361,  261,  778);
+  h('2026-03-08',           188,  268,  361,  261,  783);
+  h('2026-03-15',           192,  268,  361,  261,  783);
+  h('2026-03-22',           194,  269,  364,  261,  790);
+  h('2026-04-04',           208,  275,  369,  261,  790);
+
+  return R;
+}
+
+async function importHistoricalData() {
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true; btn.textContent = 'Загружаю…';
+  try {
+    const CHUNK = 50;
+    const allR = buildSeedReadings();
+    for (let i = 0; i < allR.length; i += CHUNK) {
+      const {error} = await sb.from('readings').insert(allR.slice(i, i+CHUNK));
+      if (error) throw error;
+      btn.textContent = `Загружаю… ${Math.min(i+CHUNK, allR.length)}/${allR.length}`;
+    }
+    const {error:te} = await sb.from('tariffs').insert(SEED_TARIFFS);
+    if (te) throw te;
+    await loadAll();
+    document.getElementById('import-banner').style.display = 'none';
+    renderDashboard();
+    toast(`Загружено ${allR.length} показаний + ${SEED_TARIFFS.length} тарифов`,'ok');
+  } catch(e) {
+    toast('Ошибка импорта: '+e.message,'err');
+    btn.disabled = false; btn.textContent = 'Загрузить данные';
+  }
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────
+function daysBetween(d1,d2){ return (new Date(d2)-new Date(d1))/86400000; }
+function fmtDate(d){ const[y,m,dd]=d.split('-'); return `${dd}.${m}.${y}`; }
+function fmtN(n,dec=0){ return n==null?'—':n.toLocaleString('ru-RU',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
+function fmtE(c){ return c==null?'—':c.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+function fmtMKey(k){ const[y,m]=k.split('-');const n=['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];return`${n[+m-1]} ${y.slice(2)}`; }
+function typeTag(type){ const c=TYPES[type];return`<span class="tag ${c.tag}">${c.label}</span>`; }
+
+// ─── TARIFF LOOKUP ────────────────────────────────────────────
+function getTariffAt(tariffType, date) {
+  return tariffs
+    .filter(t => t.type===tariffType && t.effective_from<=date)
+    .sort((a,b) => b.effective_from.localeCompare(a.effective_from))[0] || null;
+}
+
+// ─── COST CALCULATION ─────────────────────────────────────────
+// Variable cost: delta × factor × rate, prorated across tariff changes
+function calcVarCost(type, date1, date2, rawDelta) {
+  if (rawDelta <= 0) return 0;
+  const tariffType = TYPES[type].tariff;
+  const factor = TYPES[type].factor;
+  const amount = rawDelta * factor;
+  const changes = tariffs
+    .filter(t => t.type===tariffType && t.effective_from>date1 && t.effective_from<=date2)
+    .sort((a,b) => a.effective_from.localeCompare(b.effective_from));
+  const st = getTariffAt(tariffType, date1);
+  if (!st) return null;
+  const total = daysBetween(date1, date2);
+  if (total <= 0) return 0;
+  let cost=0, seg=date1, rate=st.rate;
+  for(const tc of changes){
+    cost += (daysBetween(seg,tc.effective_from)/total)*amount*rate;
+    seg=tc.effective_from; rate=tc.rate;
+  }
+  cost += (daysBetween(seg,date2)/total)*amount*rate;
+  return +cost.toFixed(4);
+}
+
+// Fixed cost prorated for a period (annual basis)
+function calcFixedProrated(tariffType, date1, date2) {
+  const changes = tariffs
+    .filter(t => t.type===tariffType && t.effective_from>date1 && t.effective_from<=date2)
+    .sort((a,b) => a.effective_from.localeCompare(b.effective_from));
+  const st = getTariffAt(tariffType, date1);
+  if (!st || !st.fixed_cost) return 0;
+  let cost=0, seg=date1, fc=st.fixed_cost;
+  for(const tc of changes){
+    cost += (daysBetween(seg,tc.effective_from)/365)*fc;
+    seg=tc.effective_from; fc=(tc.fixed_cost||0);
+  }
+  cost += (daysBetween(seg,date2)/365)*fc;
+  return +cost.toFixed(4);
+}
+
+// ─── PER-TYPE READINGS ────────────────────────────────────────
+function getTypeReadings(type) {
+  return readings.filter(r=>r.type===type).sort((a,b)=>a.date.localeCompare(b.date)||a.id-b.id);
+}
+
+function enrichReadings(type) {
+  const sorted = getTypeReadings(type);
+  return sorted.map((r,i)=>{
+    const prev = i>0 ? sorted[i-1] : null;
+    let delta=null, cost=null, days=null;
+    if(prev){
+      days = Math.round(daysBetween(prev.date,r.date));
+      if(!r.is_reset && r.value>=prev.value){
+        delta = +(r.value-prev.value).toFixed(3);
+        cost = calcVarCost(type, prev.date, r.date, delta);
+      }
+    }
+    return {...r, delta, cost, days};
+  }).reverse();
+}
+
+// ─── MONTHLY DATA ─────────────────────────────────────────────
+function getMonthlyType(type, monthsBack) {
+  const sorted = getTypeReadings(type);
+  if(sorted.length<2) return {};
+  const now = new Date();
+  const months = {};
+  for(let i=1;i<sorted.length;i++){
+    const prev=sorted[i-1], curr=sorted[i];
+    if(curr.is_reset || curr.value<prev.value) continue;
+    const delta = curr.value-prev.value;
+    const d1=new Date(prev.date), d2=new Date(curr.date);
+    const totalDays = (d2-d1)/86400000;
+    if(totalDays<=0) continue;
+    let day=new Date(d1);
+    while(day<d2){
+      const next=new Date(day); next.setDate(next.getDate()+1);
+      if(next>d2) break;
+      const frac = 1/totalDays;
+      const key = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}`;
+      if(!months[key]) months[key]={cons:0, cost:0, days:0};
+      months[key].cons += delta*frac;
+      months[key].days += 1;
+      const ds = day.toISOString().split('T')[0];
+      const t = getTariffAt(TYPES[type].tariff, ds);
+      if(t) months[key].cost += delta*frac*TYPES[type].factor*t.rate;
+      day=next;
+    }
+  }
+  return months;
+}
+
+function getMonthlyHeating(monthsBack) {
+  // Merge all 5 heating room types, applying factors
+  const combined = {};
+  for(const type of HEATING_TYPES){
+    const m = getMonthlyType(type, monthsBack);
+    for(const [key,v] of Object.entries(m)){
+      if(!combined[key]) combined[key]={cons:0,cost:0,days:0};
+      combined[key].cons += v.cons * TYPES[type].factor; // weighted units
+      combined[key].cost += v.cost;
+      if((v.days||0) > combined[key].days) combined[key].days = v.days||0;
+    }
+  }
+  return combined;
+}
+
+function filterMonths(monthsObj, monthsBack) {
+  let keys = Object.keys(monthsObj).sort();
+  if(monthsBack>0){
+    const now=new Date();
+    const cutoff=new Date(now.getFullYear(), now.getMonth()-monthsBack, 1);
+    const ck=`${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}`;
+    keys=keys.filter(k=>k>=ck);
+  }
+  return keys;
+}
+
+function addFixedToMonthly(monthsObj, tariffType) {
+  // Add prorated fixed cost to each month in the object
+  for(const key of Object.keys(monthsObj)){
+    const [y,m] = key.split('-').map(Number);
+    const d1 = `${y}-${String(m).padStart(2,'0')}-01`;
+    const d2m = new Date(y, m, 0);
+    const d2 = `${y}-${String(m).padStart(2,'0')}-${String(d2m.getDate()).padStart(2,'0')}`;
+    monthsObj[key].fixed = calcFixedProrated(tariffType, d1, d2);
+    monthsObj[key].total = (monthsObj[key].cost||0) + monthsObj[key].fixed;
+  }
+  return monthsObj;
+}
+
+// ─── NAVIGATION ───────────────────────────────────────────────
+const PAGE_TITLES = {dashboard:'Коммуналка', readings:'Показания', analytics:'Аналитика', budget:'Платежи и тарифы'};
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelectorAll('.nav-btn,.tab').forEach(b=>{
+    b.classList.toggle('active', b.dataset.page===name);
+  });
+  document.getElementById('appbar-title').textContent = PAGE_TITLES[name] || 'Коммуналка';
+  window.scrollTo({top:0, behavior:'instant'});
+  if(name==='dashboard') renderDashboard();
+  if(name==='readings'){ setDefaultDate(); updateReadingForm(); renderReadingsTable(); }
+  if(name==='analytics') renderAnalytics();
+  if(name==='budget') renderBudgetPage();
+}
+
+// ─── TOASTS ───────────────────────────────────────────────────
+function toast(msg, kind='') {
+  const wrap = document.getElementById('toasts');
+  if(!wrap){ if(kind==='err') alert(msg); return; }
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.innerHTML = (kind==='ok' ? '<span>✅</span>' : kind==='err' ? '<span>⚠️</span>' : '') + `<span>${msg}</span>`;
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.classList.add('leaving'); setTimeout(()=>el.remove(), 220); }, kind==='err'?5200:3000);
+}
+
+async function reloadData() {
+  const btn = document.getElementById('refresh-btn');
+  if(btn){ btn.style.transition='transform .6s'; btn.style.transform='rotate(360deg)'; }
+  try {
+    await loadAll();
+    const active = document.querySelector('.page.active');
+    const name = active ? active.id.replace('page-','') : 'dashboard';
+    showPage(name);
+    toast('Данные обновлены','ok');
+  } catch(e) { toast('Не удалось обновить: '+e.message,'err'); }
+  if(btn) setTimeout(()=>{ btn.style.transition='none'; btn.style.transform='none'; }, 620);
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────
+function renderDashboard() {
+  // Current readings cards (non-heating)
+  const mainTypes = ['electricity','water_bathroom','water_kitchen'];
+  const dotC = {electricity:'var(--elec)',water_bathroom:'var(--bath)',water_kitchen:'var(--kitchen)'};
+  let cardsHtml = '';
+  for(const type of mainTypes){
+    const sorted = getTypeReadings(type);
+    if(!sorted.length) continue;
+    const last = sorted[sorted.length-1];
+    const prev = sorted.length>1 ? sorted[sorted.length-2] : null;
+    const delta = prev&&!last.is_reset&&last.value>=prev.value ? +(last.value-prev.value).toFixed(3) : null;
+    const dec = TYPES[type].dec;
+    cardsHtml += `<div class="card">
+      <div class="card-label"><span class="card-dot" style="background:${dotC[type]}"></span>${TYPES[type].label}</div>
+      <div class="card-value">${fmtN(last.value,dec)} <span class="card-unit">${TYPES[type].unit}</span></div>
+      <div class="card-sub">📅 ${fmtDate(last.date)}${delta!==null?` · +${fmtN(delta,dec)}`:''}${last.is_reset?' 🔄 новый счётчик':''}</div>
+    </div>`;
+  }
+  document.getElementById('current-cards').innerHTML = cardsHtml;
+
+  // Heating current card
+  let heatHtml = '';
+  const hLastDates = HEATING_TYPES.map(t=>{
+    const s=getTypeReadings(t); return s.length ? s[s.length-1] : null;
+  });
+  const hasHeat = hLastDates.some(x=>x);
+  if(hasHeat){
+    // самая свежая дата среди комнат — комнаты могут обновляться раздельно
+    const newest = hLastDates.filter(Boolean).map(x=>x.date).sort().slice(-1)[0];
+    let roomsHtml = '';
+    HEATING_TYPES.forEach((type,i)=>{
+      const last = hLastDates[i];
+      const sorted = getTypeReadings(type);
+      const prev = sorted.length>1 ? sorted[sorted.length-2] : null;
+      const delta = last&&prev&&!last.is_reset&&last.value>=prev.value ? +(last.value-prev.value) : null;
+      const stale = last && last.date !== newest;
+      roomsHtml += `<div class="heat-room${stale?' stale':''}">
+        <div class="heat-room-name">${TYPES[type].room}</div>
+        <div class="heat-room-val">${last?fmtN(last.value):'—'}</div>
+        <div class="heat-room-delta">${
+          stale ? '📅 '+fmtDate(last.date)
+                : (delta!==null ? `+${delta} · ×${TYPES[type].factor}` : `×${TYPES[type].factor}`)
+        }</div>
+      </div>`;
+    });
+    heatHtml = `<div class="heat-card">
+      <div class="heat-card-title">
+        <span>🌡️ Отопление</span>
+        <span style="color:var(--muted);font-weight:500">${newest?fmtDate(newest):''}</span>
+      </div>
+      <div class="heat-rooms">${roomsHtml}</div>
+    </div>`;
+  }
+  document.getElementById('heat-current-card').innerHTML = heatHtml;
+
+  // Monthly summary
+  const now = new Date();
+  const key = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const mn=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  document.getElementById('month-title').textContent = `${mn[now.getMonth()]} ${now.getFullYear()}`;
+
+  const elecM = getMonthlyType('electricity',0);
+  const bathM  = getMonthlyType('water_bathroom',0);
+  const kitchM = getMonthlyType('water_kitchen',0);
+  const heatM  = getMonthlyHeating(0);
+  addFixedToMonthly({[key]:elecM[key]||{cons:0,cost:0}}, 'electricity');
+  addFixedToMonthly({[key]:bathM[key]||{cons:0,cost:0}},  'water');
+  addFixedToMonthly({[key]:kitchM[key]||{cons:0,cost:0}}, 'water');
+  addFixedToMonthly({[key]:heatM[key]||{cons:0,cost:0}},  'heating');
+
+  const eData  = elecM[key]||{cons:0,cost:0,fixed:0,total:0};
+  const bData  = bathM[key]||{cons:0,cost:0,fixed:0,total:0};
+  const kData  = kitchM[key]||{cons:0,cost:0,fixed:0,total:0};
+  const hData  = heatM[key]||{cons:0,cost:0,fixed:0,total:0};
+
+  // Calc monthly fixed contributions
+  const d1m = key+'-01';
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth()+1,0).getDate();
+  const d2m = `${key}-${String(daysInMonth).padStart(2,'0')}`;
+  const eFixed = calcFixedProrated('electricity',d1m,d2m);
+  const wFixed = calcFixedProrated('water',d1m,d2m);
+  const hFixed = calcFixedProrated('heating',d1m,d2m);
+
+  const eTotalCost = (eData.cost||0) + eFixed;
+  const wTotalCost = (bData.cost||0) + (kData.cost||0) + wFixed;
+  const hTotalCost = (hData.cost||0) + hFixed;
+  const grandTotal = eTotalCost + wTotalCost + hTotalCost;
+
+  let gridHtml = '';
+  if(eData.cons>0||eFixed>0) gridHtml += `<div class="month-item">
+    <div class="val">${fmtN(eData.cons,0)} <span style="font-size:11px;color:var(--muted)">кВт·ч</span></div>
+    <div class="lbl">${TYPES.electricity.label}</div>
+    <div class="sub">${fmtE(eTotalCost)}</div>
+  </div>`;
+  const wCons = (bData.cons||0)+(kData.cons||0);
+  if(wCons>0||wFixed>0) gridHtml += `<div class="month-item">
+    <div class="val">${fmtN(wCons,2)} <span style="font-size:11px;color:var(--muted)">м³</span></div>
+    <div class="lbl">💧 Вода</div>
+    <div class="sub">${fmtE(wTotalCost)}</div>
+  </div>`;
+  if(hData.cons>0||hFixed>0) gridHtml += `<div class="month-item">
+    <div class="val">${fmtN(hData.cons,1)} <span style="font-size:11px;color:var(--muted)">взв.ед</span></div>
+    <div class="lbl">🌡️ Отопление</div>
+    <div class="sub">${fmtE(hTotalCost)}</div>
+  </div>`;
+  if(grandTotal>0) gridHtml += `<div class="month-total">
+    <div class="val">${fmtE(grandTotal)}</div>
+    <div class="lbl">💰 Итого за месяц</div>
+  </div>`;
+  document.getElementById('month-grid').innerHTML = gridHtml || '<div class="muted">Нет данных за текущий месяц</div>';
+
+  // ── HERO: итог месяца с разбивкой ──────────────────────────
+  renderHero({
+    month: `${mn[now.getMonth()]} ${now.getFullYear()}`,
+    total: grandTotal,
+    parts: [
+      {label:'Свет',      value:eTotalCost, color:'var(--elec)'},
+      {label:'Вода',      value:wTotalCost, color:'var(--bath)'},
+      {label:'Отопление', value:hTotalCost, color:'var(--heat)'},
+    ],
+    daysPassed: now.getDate(),
+    daysInMonth,
+  });
+  renderNudge();
+
+  // Recent entries
+  const allRows=[];
+  for(const type of Object.keys(TYPES)) allRows.push(...enrichReadings(type).slice(0,5));
+  allRows.sort((a,b)=>b.date.localeCompare(a.date));
+  const recent = allRows.slice(0,12);
+  let tbody='';
+  for(const r of recent){
+    const dec=TYPES[r.type].dec;
+    tbody+=`<tr>
+      <td class="row-head">${typeTag(r.type)}<span style="color:var(--muted);font-weight:500;font-size:12.5px">${fmtDate(r.date)}</span></td>
+      <td data-l="Показание"><span>${fmtN(r.value,dec)} ${TYPES[r.type].unit}</span></td>
+      <td data-l="Потребление"><span>${r.is_reset?'<span class="muted">🔄 новый счётчик</span>':r.delta!==null?'+'+fmtN(r.delta,dec)+' '+TYPES[r.type].unit:'—'}</span></td>
+      <td data-l="Стоимость"><strong>${r.cost!=null?fmtE(r.cost):'—'}</strong></td>
+    </tr>`;
+  }
+  document.getElementById('recent-tbody').innerHTML = tbody||'<tr class="empty-row"><td colspan="5" class="empty">Нет данных</td></tr>';
+}
+
+// ─── HERO + НАПОМИНАНИЕ ───────────────────────────────────────
+function renderHero({month, total, parts, daysPassed, daysInMonth}) {
+  const el = document.getElementById('hero');
+  if(!el) return;
+  const sum = parts.reduce((a,p)=>a+(p.value||0),0);
+  const proj = daysPassed>0 ? total/daysPassed*daysInMonth : 0;
+  const bar = sum>0 ? parts.map(p=>
+    `<span style="width:${(p.value/sum*100).toFixed(1)}%;background:${p.color}"></span>`).join('') : '';
+  const legend = parts.filter(p=>p.value>0).map(p=>
+    `<div class="hero-leg"><span class="card-dot" style="background:${p.color}"></span>${p.label} <b>${fmtE(p.value)}</b></div>`).join('');
+  el.innerHTML = `
+    <div class="hero-top">
+      <div class="hero-label">${month} · расходы</div>
+      <div class="hero-label">${daysPassed} из ${daysInMonth} дн.</div>
+    </div>
+    <div class="hero-value">${total>0?fmtE(total):'—'}</div>
+    <div class="hero-sub">${proj>0?`Прогноз на месяц ≈ <b style="color:var(--text2)">${fmtE(proj)}</b>`:'Нет данных за этот месяц'}</div>
+    ${bar?`<div class="hero-bar">${bar}</div><div class="hero-legend">${legend}</div>`:''}`;
+}
+
+function renderNudge() {
+  const el = document.getElementById('nudge');
+  if(!el) return;
+  const today = new Date().toISOString().split('T')[0];
+  // по каждому счётчику — сколько дней с последнего показания
+  const stale = [];
+  for(const type of Object.keys(TYPES)){
+    const s = getTypeReadings(type);
+    if(!s.length) continue;
+    const d = Math.round(daysBetween(s[s.length-1].date, today));
+    // отопление летом почти не меняется — напоминаем реже
+    const limit = TYPES[type].group==='heating' ? 30 : 10;
+    if(d >= limit) stale.push({type, d});
+  }
+  if(!stale.length){ el.style.display='none'; return; }
+  stale.sort((a,b)=>b.d-a.d);
+  const maxD = stale[0].d;
+  const heat = stale.filter(s=>TYPES[s.type].group==='heating');
+  const rest = stale.filter(s=>TYPES[s.type].group!=='heating');
+  const names = [
+    ...rest.map(s=>TYPES[s.type].label.replace(/^\S+\s/,'')),
+    ...(heat.length===HEATING_TYPES.length ? ['Отопление (все комнаты)']
+        : heat.map(s=>'Отопление · '+TYPES[s.type].room))
+  ].join(', ');
+  el.style.display='block';
+  el.innerHTML = `<div class="nudge ${maxD>=21?'warn':'info'}">
+    <span style="font-size:17px">${maxD>=21?'⏰':'📅'}</span>
+    <p>Нет показаний <b>${maxD} дн.</b><br>
+      <span style="color:var(--muted);font-size:12px">${names}</span></p>
+    <button class="btn btn-secondary btn-sm" onclick="showPage('readings')">Внести</button>
+  </div>`;
+}
+
+// ─── READINGS PAGE ────────────────────────────────────────────
+function setDefaultDate(){ const el=document.getElementById('r-date'); if(!el.value) el.value=new Date().toISOString().split('T')[0]; }
+
+function pickType(type, btn) {
+  document.getElementById('r-type').value = type;
+  document.querySelectorAll('#type-chips .pb').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  document.getElementById('r-value').value = '';
+  updateReadingForm();
+}
+
+function updateReadingForm() {
+  const type = document.getElementById('r-type').value;
+  const isHeat = type === 'heating';
+  document.getElementById('single-val-col').style.display = isHeat ? 'none' : '';
+  document.getElementById('heat-block').style.display = isHeat ? 'block' : 'none';
+  if(isHeat){ renderHeatForm(); }
+  else {
+    const lbl = document.getElementById('r-value-label');
+    if(lbl) lbl.textContent = `Показание, ${TYPES[type].unit}`;
+    updateHint();
+  }
+}
+
+function updateHint() {
+  const type = document.getElementById('r-type').value;
+  if(type==='heating') return;
+  const sorted = getTypeReadings(type);
+  const val = parseFloat(document.getElementById('r-value').value);
+  const el = document.getElementById('r-hint');
+  if(!sorted.length){ el.textContent='Первое показание'; return; }
+  const last = sorted[sorted.length-1];
+  const dec = TYPES[type].dec;
+  let text = `Пред.: <b>${fmtN(last.value,dec)}</b> ${TYPES[type].unit} · ${fmtDate(last.date)}`;
+  if(!isNaN(val)&&val>last.value){
+    const d = +(val-last.value).toFixed(3);
+    const days = Math.round(daysBetween(last.date, document.getElementById('r-date').value||last.date));
+    text += ` → <b style="color:var(--success)">+${fmtN(d,dec)}</b>` + (days>0?` за ${days} дн.`:'');
+  } else if(!isNaN(val)&&val<last.value){
+    text += ` → <b style="color:#fca5a5">значение меньше предыдущего</b>`;
+  }
+  el.innerHTML = text;
+}
+
+// ─── ОТОПЛЕНИЕ: ввод по отдельным комнатам ────────────────────
+// Каждая комната необязательна — сохраняются только заполненные поля.
+function renderHeatForm() {
+  const wrap = document.getElementById('heat-form');
+  if(!wrap) return;
+  const vals = {};
+  HEAT_IDS.forEach(id=>{ const el=document.getElementById(id); if(el) vals[id]=el.value; });
+  wrap.innerHTML = HEATING_TYPES.map((type,i)=>{
+    const t = TYPES[type];
+    return `<label class="heat-row" id="row-${HEAT_IDS[i]}">
+      <div class="heat-row-info">
+        <div class="heat-row-name">${t.room}<span class="heat-row-k">×${t.factor}</span></div>
+        <div class="heat-row-hint" id="hh-${HEAT_IDS[i].slice(2)}"></div>
+      </div>
+      <input type="number" id="${HEAT_IDS[i]}" placeholder="—" step="1" inputmode="numeric"
+             enterkeyhint="next" oninput="updateHeatHints()">
+    </label>`;
+  }).join('');
+  HEAT_IDS.forEach(id=>{ if(vals[id]!=null) document.getElementById(id).value = vals[id]; });
+  updateHeatHints();
+}
+
+function heatRowState(i) {
+  const sorted = getTypeReadings(HEATING_TYPES[i]);
+  const last = sorted.length ? sorted[sorted.length-1] : null;
+  const el = document.getElementById(HEAT_IDS[i]);
+  const raw = el ? el.value.trim() : '';
+  const val = raw === '' ? null : parseFloat(raw);
+  return {last, val, filled: val!=null && !isNaN(val)};
+}
+
+function updateHeatHints() {
+  const date = document.getElementById('r-date').value;
+  let totalUnits = 0, anyFilled = false;
+  HEATING_TYPES.forEach((type,i)=>{
+    const {last, val, filled} = heatRowState(i);
+    const hint = document.getElementById('hh-'+HEAT_IDS[i].slice(2));
+    const row  = document.getElementById('row-'+HEAT_IDS[i]);
+    if(row) row.classList.toggle('filled', filled);
+    if(filled) anyFilled = true;
+    if(!hint) return;
+    if(!last){ hint.innerHTML = 'первое показание'; return; }
+    let text = `пред. <b>${last.value}</b> · ${fmtDate(last.date)}`;
+    if(filled && val > last.value){
+      const d = val - last.value;
+      totalUnits += d * TYPES[type].factor;
+      text += ` → <b style="color:var(--success)">+${fmtN(d,0)}</b>`;
+    } else if(filled && val < last.value){
+      text += ` → <b style="color:#fca5a5">меньше пред.</b>`;
+    }
+    hint.innerHTML = text;
+  });
+  const th = document.getElementById('heat-total-hint');
+  if(th){
+    if(!anyFilled){ th.innerHTML = 'Ни одна комната не заполнена'; }
+    else {
+      const prevDates = HEATING_TYPES.map((t,i)=>heatRowState(i).filled ? heatRowState(i).last?.date : null).filter(Boolean);
+      const days = (prevDates.length && date) ? Math.round(daysBetween(prevDates.sort().slice(-1)[0], date)) : 0;
+      const cost = totalUnits>0 ? totalUnits * (getTariffAt('heating', date)?.rate || 0) : 0;
+      th.innerHTML = `К сохранению: <b>${HEATING_TYPES.filter((t,i)=>heatRowState(i).filled).length} из 5</b>`
+        + (totalUnits>0 ? ` · <b>+${fmtN(totalUnits,1)}</b> взв.ед${days>0?` за ${days} дн.`:''} ≈ <b>${fmtE(cost)}</b>` : '');
+    }
+  }
+}
+
+function fillHeatPrev() {
+  HEATING_TYPES.forEach((type,i)=>{
+    const sorted = getTypeReadings(type);
+    const el = document.getElementById(HEAT_IDS[i]);
+    if(el && sorted.length) el.value = sorted[sorted.length-1].value;
+  });
+  updateHeatHints();
+}
+
+function clearHeat() {
+  HEAT_IDS.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  updateHeatHints();
+}
+
+async function addReading() {
+  const date = document.getElementById('r-date').value;
+  const selType = document.getElementById('r-type').value;
+  const btn = document.getElementById('add-btn');
+  if(!date){ toast('Укажите дату','err'); return; }
+
+  if(selType === 'heating') {
+    // Сохраняем ТОЛЬКО заполненные комнаты — можно внести одну (например, зал)
+    const picked = [];
+    HEATING_TYPES.forEach((type,i)=>{
+      const st = heatRowState(i);
+      if(st.filled) picked.push({type, value:st.val, prev:st.last});
+    });
+    if(!picked.length){ toast('Заполните хотя бы одну комнату','err'); return; }
+
+    // предупреждение, если значение меньше предыдущего
+    const drops = picked.filter(p=>p.prev && p.value < p.prev.value);
+    if(drops.length){
+      const list = drops.map(p=>`${TYPES[p.type].room}: ${p.value} < ${p.prev.value}`).join('\n');
+      if(!confirm(`Показания меньше предыдущих:\n${list}\n\nВсё равно сохранить?`)) return;
+    }
+    // дубль за ту же дату?
+    const dupes = picked.filter(p=>readings.some(r=>r.type===p.type && r.date===date));
+    if(dupes.length){
+      const list = dupes.map(p=>TYPES[p.type].room).join(', ');
+      if(!confirm(`За ${fmtDate(date)} уже есть показания: ${list}.\nДобавить ещё одну запись?`)) return;
+    }
+
+    btn.disabled=true; btn.textContent='Сохраняю…';
+    const rows = picked.map(p=>({date, type:p.type, value:p.value, is_reset:false}));
+    const {data,error} = await sb.from('readings').insert(rows).select();
+    btn.disabled=false; btn.textContent='Сохранить';
+    if(error){ toast('Ошибка: '+error.message,'err'); return; }
+    readings.push(...data);
+    clearHeat();
+    showHeatFeedback(date, picked.map(p=>p.type));
+    toast(picked.length===1
+      ? `Сохранено: ${TYPES[picked[0].type].room}`
+      : `Сохранено комнат: ${picked.length}`, 'ok');
+    syncToSheets(picked.map(p=>buildSheetsRow(p.type, date, p.value, p.prev)));
+  } else {
+    const value = parseFloat(document.getElementById('r-value').value);
+    if(isNaN(value)){ toast('Введите показание','err'); return; }
+    const sorted = getTypeReadings(selType);
+    const last = sorted.length ? sorted[sorted.length-1] : null;
+    let is_reset = false;
+    if(last&&value<last.value){
+      is_reset = confirm(`Показание ${value} меньше предыдущего ${last.value}.\nЭто замена счётчика?`);
+    }
+    btn.disabled=true; btn.textContent='Сохраняю…';
+    const {data,error} = await sb.from('readings').insert({date,type:selType,value,is_reset}).select().single();
+    btn.disabled=false; btn.textContent='Сохранить';
+    if(error){ toast('Ошибка: '+error.message,'err'); return; }
+    readings.push(data);
+    document.getElementById('r-value').value='';
+    document.getElementById('r-hint').textContent='';
+    showConsumptionFeedback(selType, value, last);
+    toast(`Сохранено: ${TYPES[selType].label}`,'ok');
+    syncToSheets([buildSheetsRow(selType, date, value, last)]);
+  }
+  renderReadingsTable();
+}
+
+function renderReadingsTable() {
+  const fv = document.getElementById('filter-type').value;
+  let types;
+  if(!fv) types = Object.keys(TYPES);
+  else if(fv==='heating_all') types = HEATING_TYPES;
+  else types = [fv];
+
+  const allRows=[];
+  for(const type of types) allRows.push(...enrichReadings(type));
+  allRows.sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+
+  let tbody='';
+  for(const r of allRows){
+    const dec=TYPES[r.type].dec;
+    const tariff = getTariffAt(TYPES[r.type].tariff, r.date);
+    tbody+=`<tr>
+      <td class="row-head">${typeTag(r.type)}<span style="color:var(--muted);font-weight:500;font-size:12.5px">${fmtDate(r.date)}</span></td>
+      <td data-l="Показание"><span style="font-weight:650">${fmtN(r.value,dec)} <span class="muted">${TYPES[r.type].unit}</span></span></td>
+      <td data-l="Δ"><span>${r.is_reset?'<span class="muted">🔄 замена счётчика</span>':r.delta!==null?'+'+fmtN(r.delta,dec)+' '+TYPES[r.type].unit:'—'}</span></td>
+      <td data-l="Дней"><span class="muted">${r.days!=null?r.days:'—'}</span></td>
+      <td data-l="Тариф"><span class="muted">${tariff?tariff.rate+' €':'—'}</span></td>
+      <td data-l="Стоимость"><strong>${r.cost!=null?fmtE(r.cost):'—'}</strong></td>
+      <td class="row-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openEditReading(${r.id})">✏️ Изменить</button>
+        <button class="btn btn-ghost" onclick="deleteReading(${r.id})">✕ Удалить</button>
+      </td>
+    </tr>`;
+  }
+  document.getElementById('readings-tbody').innerHTML = tbody||'<tr class="empty-row"><td colspan="8" class="empty">Нет данных</td></tr>';
+}
+
+async function deleteReading(id) {
+  if(!confirm('Удалить это показание?')) return;
+  const {error} = await sb.from('readings').delete().eq('id',id);
+  if(error){ toast('Ошибка: '+error.message,'err'); return; }
+  readings = readings.filter(r=>r.id!==id);
+  renderReadingsTable();
+}
+
+function openEditReading(id) {
+  const r = readings.find(x=>x.id===id);
+  if(!r) return;
+  editingReadingId = id;
+  document.getElementById('e-date').value = r.date;
+  document.getElementById('e-type').value = r.type;
+  document.getElementById('e-value').value = r.value;
+  document.getElementById('e-reset').checked = r.is_reset||false;
+  document.getElementById('reading-modal').classList.add('open');
+}
+
+async function saveEditReading() {
+  const date=document.getElementById('e-date').value;
+  const type=document.getElementById('e-type').value;
+  const value=parseFloat(document.getElementById('e-value').value);
+  const is_reset=document.getElementById('e-reset').checked;
+  if(!date||isNaN(value)){ toast('Заполните все поля','err'); return; }
+  const btn=document.getElementById('save-reading-btn');
+  btn.disabled=true;
+  const {data,error}=await sb.from('readings').update({date,type,value,is_reset}).eq('id',editingReadingId).select().single();
+  btn.disabled=false;
+  if(error){ toast('Ошибка: '+error.message,'err'); return; }
+  const idx=readings.findIndex(r=>r.id===editingReadingId);
+  if(idx>=0) readings[idx]=data;
+  closeReadingModal();
+  renderReadingsTable();
+}
+
+function closeReadingModal(){ document.getElementById('reading-modal').classList.remove('open'); editingReadingId=null; }
+
+// ─── TARIFFS PAGE ─────────────────────────────────────────────
+function renderTariffsTable() {
+  const order = {electricity:0,water:1,heating:2};
+  const sorted = [...tariffs].sort((a,b)=>{
+    if(a.type!==b.type) return (order[a.type]||0)-(order[b.type]||0);
+    return b.effective_from.localeCompare(a.effective_from);
+  });
+  const labels = {electricity:'⚡ Электричество', water:'💧 Вода', heating:'🌡️ Отопление'};
+  let tbody='';
+  for(const t of sorted){
+    tbody+=`<tr>
+      <td class="row-head"><span class="tag" style="background:rgba(255,255,255,.08);color:var(--text)">${labels[t.type]||t.type}</span><span style="color:var(--muted);font-weight:500;font-size:12.5px">с ${fmtDate(t.effective_from)}</span></td>
+      <td data-l="Фикс. €/год"><strong>${t.fixed_cost!=null?t.fixed_cost:'—'}</strong></td>
+      <td data-l="Цена за ед."><strong>${t.rate} €</strong></td>
+      <td data-l="Единица"><span class="muted">${TARIFF_UNITS[t.type]||''}</span></td>
+      <td class="row-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openTariffModal(${t.id})">✏️ Изменить</button>
+        <button class="btn btn-ghost" onclick="deleteTariff(${t.id})">✕ Удалить</button>
+      </td>
+    </tr>`;
+  }
+  document.getElementById('tariffs-tbody').innerHTML = tbody||'<tr class="empty-row"><td colspan="6" class="empty">Нет тарифов</td></tr>';
+}
+
+function openTariffModal(id) {
+  editingTariffId = id||null;
+  if(id){
+    const t=tariffs.find(x=>x.id===id);
+    if(!t) return;
+    document.getElementById('t-modal-title').textContent='Редактировать тариф';
+    document.getElementById('t-date').value=t.effective_from;
+    document.getElementById('t-type').value=t.type;
+    document.getElementById('t-fixed').value=t.fixed_cost||0;
+    document.getElementById('t-rate').value=t.rate;
+  } else {
+    document.getElementById('t-modal-title').textContent='Новый тариф';
+    document.getElementById('t-date').value=new Date().toISOString().split('T')[0];
+    document.getElementById('t-type').value='electricity';
+    document.getElementById('t-fixed').value='';
+    document.getElementById('t-rate').value='';
+  }
+  document.getElementById('tariff-modal').classList.add('open');
+}
+
+function closeTariffModal(){ document.getElementById('tariff-modal').classList.remove('open'); editingTariffId=null; }
+
+async function saveTariff() {
+  const effective_from=document.getElementById('t-date').value;
+  const type=document.getElementById('t-type').value;
+  const fixed_cost=parseFloat(document.getElementById('t-fixed').value)||0;
+  const rate=parseFloat(document.getElementById('t-rate').value);
+  if(!effective_from||isNaN(rate)||rate<0){ toast('Заполните все поля','err'); return; }
+  const btn=document.getElementById('save-tariff-btn');
+  btn.disabled=true;
+  let data,error;
+  if(editingTariffId){
+    ({data,error}=await sb.from('tariffs').update({effective_from,type,fixed_cost,rate}).eq('id',editingTariffId).select().single());
+    if(!error){ const idx=tariffs.findIndex(t=>t.id===editingTariffId); if(idx>=0) tariffs[idx]=data; }
+  } else {
+    ({data,error}=await sb.from('tariffs').insert({effective_from,type,fixed_cost,rate}).select().single());
+    if(!error) tariffs.push(data);
+  }
+  btn.disabled=false;
+  if(error){ toast('Ошибка: '+error.message,'err'); return; }
+  syncTariffToSheets(data, editingTariffId ? 'изменён' : 'добавлен');
+  closeTariffModal();
+  renderTariffsTable();
+}
+
+async function deleteTariff(id) {
+  if(!confirm('Удалить этот тариф?')) return;
+  const tariff = tariffs.find(t=>t.id===id);
+  const {error}=await sb.from('tariffs').delete().eq('id',id);
+  if(error){ toast('Ошибка: '+error.message,'err'); return; }
+  tariffs=tariffs.filter(t=>t.id!==id);
+  if(tariff) syncTariffToSheets(tariff, 'удалён');
+  renderTariffsTable();
+}
+
+// ─── SETTINGS & GOOGLE SHEETS SYNC ───────────────────────────
+function openSettings() {
+  document.getElementById('s-gsheets-url').value = localStorage.getItem('gsheetsUrl') || '';
+  updateSyncStatus();
+  document.getElementById('settings-modal').classList.add('open');
+}
+function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
+
+async function saveSettings() {
+  const btn = document.querySelector('#settings-modal .btn-primary');
+  if(btn){ btn.disabled=true; btn.textContent='Сохраняю…'; }
+  const url = document.getElementById('s-gsheets-url').value.trim();
+  try {
+    if (url) {
+      localStorage.setItem('gsheetsUrl', url);
+      await sb.from('settings').upsert({key:'gsheetsUrl', value:url, updated_at:new Date().toISOString()});
+    } else {
+      localStorage.removeItem('gsheetsUrl');
+      await sb.from('settings').delete().eq('key','gsheetsUrl');
+    }
+  } catch(e) { console.warn('Settings save error:', e); }
+  if(btn){ btn.disabled=false; btn.textContent='Сохранить'; }
+  updateSyncStatus();
+  closeSettings();
+}
+
+function updateSyncStatus() {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const url = localStorage.getItem('gsheetsUrl') || document.getElementById('s-gsheets-url')?.value || '';
+  if (url) {
+    el.innerHTML = '<span class="sync-dot ok"></span><span style="font-size:11px;color:var(--success)">включено</span>';
+  } else {
+    el.innerHTML = '<span class="sync-dot"></span><span style="font-size:11px;color:var(--muted)">не настроено</span>';
+  }
+}
+
+function copyScriptCode() {
+  const code = document.querySelector('.code-block').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = event.target;
+    btn.textContent = '✅ Скопировано';
+    setTimeout(() => btn.textContent = '📋 Скопировать код', 2000);
+  });
+}
+
+// Map internal type to Google Sheets format
+const SHEETS_TYPE_MAP = {
+  electricity:      {type:'Электричество', room:''},
+  water_bathroom:   {type:'Вода',          room:'Ванная'},
+  water_kitchen:    {type:'Вода',          room:'Кухня'},
+  heating_bathroom: {type:'Отопление',     room:'Ванная'},
+  heating_kitchen:  {type:'Отопление',     room:'Кухня'},
+  heating_bedroom:  {type:'Отопление',     room:'Спальная'},
+  heating_kids:     {type:'Отопление',     room:'Детская'},
+  heating_living:   {type:'Отопление',     room:'Зал'},
+};
+
+async function syncToSheets(rows) {
+  const url = localStorage.getItem('gsheetsUrl');
+  if (!url || !rows.length) return;
+  try {
+    const data = encodeURIComponent(JSON.stringify(rows));
+    fetch(`${url}?data=${data}`, { mode: 'no-cors' });
+  } catch(e) { /* silent */ }
+}
+
+const TARIFF_TYPE_LABELS = {electricity:'Электричество', water:'Вода', heating:'Отопление'};
+
+async function syncTariffToSheets(tariff, action) {
+  const url = localStorage.getItem('gsheetsUrl');
+  if (!url || !tariff) return;
+  try {
+    const row = {
+      effective_from: tariff.effective_from,
+      type: TARIFF_TYPE_LABELS[tariff.type] || tariff.type,
+      fixed_cost: tariff.fixed_cost,
+      rate: tariff.rate,
+      action
+    };
+    const data = encodeURIComponent(JSON.stringify([row]));
+    fetch(`${url}?sheet=tariffs&data=${data}`, { mode: 'no-cors' });
+  } catch(e) { /* silent */ }
+}
+
+function buildSheetsRow(type, date, value, prevReading) {
+  const m = SHEETS_TYPE_MAP[type] || {type, room:''};
+  let delta = '', cost = '';
+  if (prevReading && !prevReading.is_reset && value > prevReading.value) {
+    delta = +(value - prevReading.value).toFixed(3);
+    cost  = calcVarCost(type, prevReading.date, date, delta) ?? '';
+  }
+  return { date, type: m.type, room: m.room, value, delta, cost };
+}
+
+// ─── CONSUMPTION FEEDBACK ─────────────────────────────────────
+// Average consumption per day across all reading pairs for a type
+function calcAvgDailyRate(type) {
+  const sorted = getTypeReadings(type);
+  let tCons = 0, tDays = 0;
+  for (let i = 1; i < sorted.length - 1; i++) { // exclude last (just saved)
+    const prev = sorted[i-1], curr = sorted[i];
+    if (curr.is_reset || curr.value < prev.value) continue;
+    const d = Math.round(daysBetween(prev.date, curr.date));
+    if (d > 0) { tCons += curr.value - prev.value; tDays += d; }
+  }
+  return tDays > 0 ? tCons / tDays : 0;
+}
+
+function showConsumptionFeedback(type, newVal, prevReading) {
+  const el = document.getElementById('consumption-feedback');
+  if (!el) return;
+  if (!prevReading || !newVal) { el.style.display='none'; return; }
+  const delta = newVal - prevReading.value;
+  if (delta <= 0) { el.style.display='none'; return; }
+  const days = Math.round(daysBetween(prevReading.date, document.getElementById('r-date').value));
+  if (days <= 0) { el.style.display='none'; return; }
+
+  const perDay = delta / days;
+  const avgRate = calcAvgDailyRate(type);
+  const dec = TYPES[type].dec;
+  const unit = TYPES[type].unit;
+  const label = TYPES[type].label;
+
+  let cmpHtml = '';
+  if (avgRate > 0) {
+    const pct = (perDay - avgRate) / avgRate * 100;
+    const isAbove = pct > 10, isBelow = pct < -10;
+    const color = isAbove ? '#f87171' : isBelow ? '#4ade80' : '#94a3b8';
+    const emoji = isAbove ? '📈' : isBelow ? '📉' : '➡️';
+    const comment = isAbove ? 'выше нормы' : isBelow ? 'ниже нормы' : 'в норме';
+    cmpHtml = `&nbsp;·&nbsp;<span style="color:${color};font-weight:600">${emoji} ${pct>=0?'+':''}${pct.toFixed(0)}% ${comment}</span>
+      <span style="color:var(--muted)"> · норма ${fmtN(avgRate, dec+1)} ${unit}/день</span>`;
+  }
+
+  el.style.display = 'block';
+  el.innerHTML = `<div style="font-size:14px;font-weight:600;margin-bottom:2px">
+      ${label}: <span style="color:var(--success)">+${fmtN(delta,dec)} ${unit}</span> за ${days} дн.
+      &nbsp;·&nbsp; ${fmtN(perDay, dec+1)} ${unit}/день${cmpHtml}
+    </div>`;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.display='none'; }, 12000);
+}
+
+// savedTypes — какие комнаты только что внесли (может быть одна)
+function showHeatFeedback(date, savedTypes) {
+  const el = document.getElementById('consumption-feedback');
+  const types = savedTypes && savedTypes.length ? savedTypes : HEATING_TYPES;
+  if (!el) return;
+
+  let totalDelta = 0, maxDays = 0, parts = [];
+  types.forEach(type => {
+    const sorted = getTypeReadings(type);
+    if (sorted.length < 2) return;
+    const last = sorted[sorted.length-1], prev = sorted[sorted.length-2];
+    if (!prev || last.is_reset || last.value < prev.value) return;
+    const d = last.value - prev.value;
+    const dd = Math.round(daysBetween(prev.date, last.date));
+    if (dd > maxDays) maxDays = dd;
+    totalDelta += d * TYPES[type].factor;
+    parts.push(`${TYPES[type].room} +${fmtN(d,0)}`);
+  });
+
+  const days = maxDays;
+  if (totalDelta <= 0 || days <= 0) { el.style.display='none'; return; }
+  const perDay = totalDelta / days;
+  const roomsLine = parts.length ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${parts.join(' · ')}</div>` : '';
+
+  // Historical daily avg for heating (weighted units)
+  const hData = getMonthlyHeating(0);
+  let tCons=0, tDays=0;
+  const curKey = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+  for (const [k, v] of Object.entries(hData)) {
+    if (k === curKey || !(v.cons > 0) || !(v.days > 0)) continue;
+    tCons += v.cons; tDays += v.days;
+  }
+  const avgRate = tDays > 0 ? tCons/tDays : 0;
+
+  let cmpHtml = '';
+  if (avgRate > 0) {
+    const pct = (perDay - avgRate) / avgRate * 100;
+    const isAbove = pct > 10, isBelow = pct < -10;
+    const color = isAbove ? '#f87171' : isBelow ? '#4ade80' : '#94a3b8';
+    const emoji = isAbove ? '📈' : isBelow ? '📉' : '➡️';
+    const comment = isAbove ? 'выше нормы' : isBelow ? 'ниже нормы' : 'в норме';
+    cmpHtml = `&nbsp;·&nbsp;<span style="color:${color};font-weight:600">${emoji} ${pct>=0?'+':''}${pct.toFixed(0)}% ${comment}</span>
+      <span style="color:var(--muted)"> · норма ${fmtN(avgRate,1)} взв.ед/день</span>`;
+  }
+
+  el.style.display = 'block';
+  el.innerHTML = `<div style="font-weight:650;margin-bottom:2px">
+      🌡️ Отопление: <span style="color:var(--success)">+${fmtN(totalDelta,1)} взв.ед</span> за ${days} дн.
+      &nbsp;·&nbsp; ${fmtN(perDay,1)} взв.ед/день${cmpHtml}
+    </div>${roomsLine}`;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.display='none'; }, 12000);
+}
+
+// ─── ANALYTICS ────────────────────────────────────────────────
+let analyticsView = 'monthly';
+let yoyMode = 'full';       // 'full' | 'ytd'
+let dailyPeriod = 6;        // months for daily view
+
+function setYoyMode(mode, btn) {
+  yoyMode = mode;
+  document.querySelectorAll('#yoy-mode-full,#yoy-mode-ytd').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderAnalytics();
+}
+
+function setDailyPeriod(months, btn) {
+  dailyPeriod = months;
+  document.querySelectorAll('.period-btns .pb[id^=dpb-]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDailyView();
+}
+
+function setAnalyticsView(view, btn) {
+  analyticsView = view;
+  document.querySelectorAll('.vt').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('view-monthly').style.display = view==='monthly'?'':'none';
+  document.getElementById('view-yoy').style.display     = view==='yoy'?'':'none';
+  document.getElementById('view-daily').style.display   = view==='daily'?'':'none';
+  document.getElementById('period-btns-wrap').style.display = view==='monthly'?'flex':'none';
+  renderAnalytics();
+}
+
+function setPeriod(months, btn) {
+  analyticsPeriod=months;
+  document.querySelectorAll('.pb').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderAnalytics();
+}
+
+// ── Chart helpers ─────────────────────────────────────────────
+function makeChart(id, labels, datasets, yLabel, opts={}) {
+  if(charts[id]){ charts[id].destroy(); delete charts[id]; }
+  const el = document.getElementById(id);
+  if(!el) return;
+  const ctx = el.getContext('2d');
+  charts[id] = new Chart(ctx,{
+    type: opts.type||'bar',
+    data:{labels, datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{labels:{color:'#7b82a8',font:{size:11},boxWidth:12}},
+        tooltip:{mode:'index', intersect:false,
+          callbacks: opts.tooltipCb ? {label: opts.tooltipCb} : undefined}
+      },
+      scales:{
+        x:{grid:{color:'#2e3350'},ticks:{color:'#7b82a8',font:{size:10}},stacked:opts.stacked!==false},
+        y:{grid:{color:'#2e3350'},ticks:{color:'#7b82a8',font:{size:10}},
+           title:{display:!!yLabel,text:yLabel,color:'#7b82a8'},
+           stacked:opts.stacked!==false}
+      }
+    }
+  });
+}
+
+// avgLine dataset (type: line, dashed)
+function avgDataset(label, values, color) {
+  const nonZero = values.filter(v=>v>0);
+  const avg = nonZero.length ? nonZero.reduce((a,b)=>a+b,0)/nonZero.length : 0;
+  return {
+    type:'line', label:`Среднее (${fmtN(avg,1)})`,
+    data: values.map(()=>+avg.toFixed(2)),
+    borderColor: color, borderWidth:1.5, borderDash:[5,4],
+    pointRadius:0, fill:false, tension:0, order:-1,
+    stack: undefined
+  };
+}
+
+// ── Monthly consumption data (all time, no filter) ────────────
+function getAllMonthlyData() {
+  return {
+    elec:  getMonthlyType('electricity',0),
+    bath:  getMonthlyType('water_bathroom',0),
+    kitch: getMonthlyType('water_kitchen',0),
+    heat:  getMonthlyHeating(0),
+  };
+}
+
+// ── Monthly fixed cost helper ─────────────────────────────────
+function monthFixed(tariffType, key) {
+  const [y,m]=key.split('-').map(Number);
+  const d1=`${y}-${String(m).padStart(2,'0')}-01`;
+  const d2m=new Date(y,m,0).getDate();
+  const d2=`${y}-${String(m).padStart(2,'0')}-${String(d2m).padStart(2,'0')}`;
+  return +calcFixedProrated(tariffType,d1,d2).toFixed(2);
+}
+
+function monthTotalCost(key, all) {
+  return +(
+    (all.elec[key]?.cost||0) + monthFixed('electricity',key) +
+    (all.bath[key]?.cost||0) + (all.kitch[key]?.cost||0) + monthFixed('water',key) +
+    (all.heat[key]?.cost||0) + monthFixed('heating',key)
+  ).toFixed(2);
+}
+
+// ── Summary stat cards ────────────────────────────────────────
+function renderSummaryStats(all) {
+  const now = new Date();
+  const curKey  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const prevKey = `${now.getFullYear()-1}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // Per-day rate: total consumption / total covered days (all historical months excl. current)
+  const dailyRate = (obj, excludeKey) => {
+    let tCons = 0, tDays = 0;
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === excludeKey || !(v.cons > 0) || !(v.days > 0)) continue;
+      tCons += v.cons; tDays += v.days;
+    }
+    return tDays > 0 ? tCons / tDays : 0;
+  };
+
+  const pctHtml = (curRate, refRate) => {
+    if (!refRate || !curRate) return '<span class="delta-neutral">—</span>';
+    const pct = (curRate - refRate) / refRate * 100;
+    const cls = pct > 10 ? 'delta-up' : pct < -10 ? 'delta-down' : 'delta-neutral';
+    return `<span class="${cls}">${pct>=0?'+':''}${pct.toFixed(0)}%</span>`;
+  };
+
+  // Electricity
+  const eCur  = all.elec[curKey]?.cons||0;
+  const eDays = all.elec[curKey]?.days||1;
+  const eCurR = eCur/eDays;
+  const eAvgR = dailyRate(all.elec, curKey);
+  const ePrevR = (all.elec[prevKey]?.cons||0) / (all.elec[prevKey]?.days||30);
+
+  // Water combined
+  const wCur  = (all.bath[curKey]?.cons||0)+(all.kitch[curKey]?.cons||0);
+  const wDays = Math.max(all.bath[curKey]?.days||0, all.kitch[curKey]?.days||0)||1;
+  const wCurR = wCur/wDays;
+  const wAllKeys = new Set([...Object.keys(all.bath),...Object.keys(all.kitch)]);
+  let wTC=0, wTD=0;
+  for(const k of wAllKeys){
+    if(k===curKey) continue;
+    const c=(all.bath[k]?.cons||0)+(all.kitch[k]?.cons||0);
+    const d=Math.max(all.bath[k]?.days||0, all.kitch[k]?.days||0);
+    if(c>0&&d>0){wTC+=c; wTD+=d;}
+  }
+  const wAvgR  = wTD>0 ? wTC/wTD : 0;
+  const wPrevR = ((all.bath[prevKey]?.cons||0)+(all.kitch[prevKey]?.cons||0)) /
+                 (Math.max(all.bath[prevKey]?.days||0, all.kitch[prevKey]?.days||0)||30);
+
+  // Heating
+  const hCur  = all.heat[curKey]?.cons||0;
+  const hDays = all.heat[curKey]?.days||1;
+  const hCurR = hCur/hDays;
+  const hAvgR = dailyRate(all.heat, curKey);
+  const hPrevR = (all.heat[prevKey]?.cons||0) / (all.heat[prevKey]?.days||30);
+
+  // Cost (proxy: use elec days as period length for current month)
+  const cCur   = monthTotalCost(curKey, all);
+  const cCurR  = cCur / eDays;
+  const cPrevCost = monthTotalCost(prevKey, all);
+  const cPrevR = cPrevCost / (all.elec[prevKey]?.days||30);
+  const allCostKeys = [...new Set([...Object.keys(all.elec),...Object.keys(all.bath),...Object.keys(all.heat)])].filter(k=>k!==curKey);
+  let cTC=0, cTD=0;
+  for(const k of allCostKeys){
+    const d=all.elec[k]?.days||0; const c=monthTotalCost(k,all);
+    if(c>0&&d>0){cTC+=c; cTD+=d;}
+  }
+  const cAvgR = cTD>0 ? cTC/cTD : 0;
+
+  const mn=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  const prevMonthName = mn[now.getMonth()]+' '+(now.getFullYear()-1);
+
+  document.getElementById('analytics-summary').innerHTML = [
+    {icon:'⚡', label:'Электричество', cur:eCur,  unit:'кВт·ч',  curR:eCurR,  avgR:eAvgR,  prevR:ePrevR,  dec:0},
+    {icon:'💧', label:'Вода',          cur:wCur,  unit:'м³',     curR:wCurR,  avgR:wAvgR,  prevR:wPrevR,  dec:2},
+    {icon:'🌡️', label:'Отопление',     cur:hCur,  unit:'взв.ед', curR:hCurR,  avgR:hAvgR,  prevR:hPrevR,  dec:1},
+    {icon:'💰', label:'Расходы',        cur:cCur,  unit:'€',      curR:cCurR,  avgR:cAvgR,  prevR:cPrevR,  dec:2},
+  ].map(c=>`
+    <div class="stat-card">
+      <div class="stat-card-label">${c.icon} ${c.label}</div>
+      <div class="stat-card-main">${c.cur>0?fmtN(c.cur,c.dec):'—'} <span class="stat-card-unit">${c.unit}</span></div>
+      <div class="stat-rows">
+        <div class="stat-row">
+          <span class="stat-row-label">vs среднее</span>
+          ${c.avgR>0&&c.curR>0 ? pctHtml(c.curR,c.avgR) : '<span class="delta-neutral">—</span>'}
+        </div>
+        <div class="stat-row">
+          <span class="stat-row-label">vs ${prevMonthName}</span>
+          ${c.prevR>0&&c.curR>0 ? pctHtml(c.curR,c.prevR) : '<span class="delta-neutral">—</span>'}
+        </div>
+        ${c.avgR>0 ? `<div class="stat-row"><span class="stat-row-label">средн./день</span><span style="color:var(--muted);font-size:11px">${fmtN(c.avgR,c.dec+1)} ${c.unit}</span></div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+// ── Year selectors ────────────────────────────────────────────
+function initYearSelectors(allKeys) {
+  const years = [...new Set(allKeys.map(k=>k.split('-')[0]))].sort().reverse();
+  ['yoy-year1','yoy-year2'].forEach((id,i)=>{
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    const current = sel.value;
+    sel.innerHTML = years.map(y=>`<option value="${y}"${y===(current||(i===0?String(new Date().getFullYear()):String(new Date().getFullYear()-1)))?'selected':''}>${y}</option>`).join('');
+    if(!current && years[i]) sel.value = years[i] || years[0];
+  });
+}
+
+// ── YoY Charts ────────────────────────────────────────────────
+function renderYoY(all) {
+  const y1 = document.getElementById('yoy-year1')?.value;
+  const y2 = document.getElementById('yoy-year2')?.value;
+  if(!y1||!y2) return;
+
+  const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+  const MLABELS = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+  const gm = (obj, year, mo, f) => obj[`${year}-${mo}`]?.[f]||0;
+  // YTD: limit months to current month index
+  const curMoIdx = yoyMode==='ytd' ? new Date().getMonth() : 11; // 0-based
+  const activeMos = MONTHS.slice(0, curMoIdx+1);
+
+  const chartLabels = MLABELS.slice(0, curMoIdx+1);
+
+  // Electricity
+  makeChart('yoy-elec', chartLabels, [
+    {label:y1, data:activeMos.map(m=>+gm(all.elec,y1,m,'cons').toFixed(0)), backgroundColor:'rgba(245,158,11,.8)', borderColor:'#f59e0b', borderWidth:1, borderRadius:3},
+    {label:y2, data:activeMos.map(m=>+gm(all.elec,y2,m,'cons').toFixed(0)), backgroundColor:'rgba(245,158,11,.25)',borderColor:'#f59e0b', borderWidth:1, borderRadius:3},
+  ],'кВт·ч',{stacked:false});
+
+  // Water
+  const w1 = activeMos.map(m=>+(gm(all.bath,y1,m,'cons')+gm(all.kitch,y1,m,'cons')).toFixed(2));
+  const w2 = activeMos.map(m=>+(gm(all.bath,y2,m,'cons')+gm(all.kitch,y2,m,'cons')).toFixed(2));
+  makeChart('yoy-water', chartLabels, [
+    {label:y1, data:w1, backgroundColor:'rgba(59,130,246,.8)', borderColor:'#3b82f6', borderWidth:1, borderRadius:3},
+    {label:y2, data:w2, backgroundColor:'rgba(59,130,246,.25)',borderColor:'#3b82f6', borderWidth:1, borderRadius:3},
+  ],'м³',{stacked:false});
+
+  // Heating
+  makeChart('yoy-heat', chartLabels, [
+    {label:y1, data:activeMos.map(m=>+gm(all.heat,y1,m,'cons').toFixed(1)), backgroundColor:'rgba(239,68,68,.8)', borderColor:'#ef4444', borderWidth:1, borderRadius:3},
+    {label:y2, data:activeMos.map(m=>+gm(all.heat,y2,m,'cons').toFixed(1)), backgroundColor:'rgba(239,68,68,.25)',borderColor:'#ef4444', borderWidth:1, borderRadius:3},
+  ],'взв.ед',{stacked:false});
+
+  // Cost
+  const cost1 = activeMos.map(m=>{ const k=`${y1}-${m}`; return monthTotalCost(k,all); });
+  const cost2 = activeMos.map(m=>{ const k=`${y2}-${m}`; return monthTotalCost(k,all); });
+  makeChart('yoy-cost', chartLabels, [
+    {label:y1, data:cost1, backgroundColor:'rgba(34,197,94,.8)', borderColor:'#22c55e', borderWidth:1, borderRadius:3},
+    {label:y2, data:cost2, backgroundColor:'rgba(34,197,94,.25)',borderColor:'#22c55e', borderWidth:1, borderRadius:3},
+  ],'€',{stacked:false});
+
+  // YoY Table
+  const tableEl = document.getElementById('yoy-table');
+  const totalCons1 = {e:0,w:0,h:0,c:0};
+  const totalCons2 = {e:0,w:0,h:0,c:0};
+  let rowsHtml = `<thead>
+    <tr>
+      <th class="yoy-th" style="text-align:left">Месяц</th>
+      <th class="yoy-th">⚡ ${y1}</th><th class="yoy-th">⚡ ${y2}</th><th class="yoy-th">Δ</th>
+      <th class="yoy-th">💧 ${y1}</th><th class="yoy-th">💧 ${y2}</th><th class="yoy-th">Δ</th>
+      <th class="yoy-th">🌡️ ${y1}</th><th class="yoy-th">🌡️ ${y2}</th><th class="yoy-th">Δ</th>
+      <th class="yoy-th">€ ${y1}</th><th class="yoy-th">€ ${y2}</th><th class="yoy-th">Δ</th>
+    </tr></thead><tbody>`;
+
+  const modeLabel = yoyMode==='ytd' ? ` (YTD ${MLABELS[curMoIdx]})` : '';
+  rowsHtml = rowsHtml.replace('📋 Таблица', `📋 Таблица${modeLabel}`);
+
+  activeMos.forEach((mo,i)=>{
+    const e1=gm(all.elec,y1,mo,'cons'), e2=gm(all.elec,y2,mo,'cons');
+    const ww1=gm(all.bath,y1,mo,'cons')+gm(all.kitch,y1,mo,'cons');
+    const ww2=gm(all.bath,y2,mo,'cons')+gm(all.kitch,y2,mo,'cons');
+    const h1=gm(all.heat,y1,mo,'cons'), h2=gm(all.heat,y2,mo,'cons');
+    const c1=cost1[i], c2=cost2[i];
+    totalCons1.e+=e1; totalCons2.e+=e2;
+    totalCons1.w+=ww1; totalCons2.w+=ww2;
+    totalCons1.h+=h1; totalCons2.h+=h2;
+    totalCons1.c+=c1; totalCons2.c+=c2;
+    const skipRow = !e1&&!e2&&!ww1&&!ww2&&!h1&&!h2;
+    if(skipRow) return;
+    const dCls = (a,b) => !a||!b?'':'yoy-delta-'+(a>b?'pos':'neg');
+    const dStr = (a,b) => (!a&&!b)?'—':!a||!b?'—':`${a>b?'+':''}${fmtN(a-b,1)}`;
+    rowsHtml += `<tr>
+      <td class="yoy-td">${MLABELS[i]}</td>
+      <td class="yoy-td">${e1?fmtN(e1,0):'—'}</td><td class="yoy-td">${e2?fmtN(e2,0):'—'}</td>
+      <td class="yoy-td ${dCls(e1,e2)}">${dStr(e1,e2)}</td>
+      <td class="yoy-td">${ww1?fmtN(ww1,2):'—'}</td><td class="yoy-td">${ww2?fmtN(ww2,2):'—'}</td>
+      <td class="yoy-td ${dCls(ww1,ww2)}">${dStr(ww1,ww2)}</td>
+      <td class="yoy-td">${h1?fmtN(h1,1):'—'}</td><td class="yoy-td">${h2?fmtN(h2,1):'—'}</td>
+      <td class="yoy-td ${dCls(h1,h2)}">${dStr(h1,h2)}</td>
+      <td class="yoy-td">${c1?fmtE(c1):'—'}</td><td class="yoy-td">${c2?fmtE(c2):'—'}</td>
+      <td class="yoy-td ${dCls(c1,c2)}">${dStr(c1,c2)}</td>
+    </tr>`;
+  });
+  // Totals row
+  const dCls=(a,b)=>!a||!b?'':'yoy-delta-'+(a>b?'pos':'neg');
+  const dStr=(a,b)=>(!a&&!b)?'—':!a||!b?'—':`${a>b?'+':''}${fmtN(a-b,1)}`;
+  rowsHtml+=`<tr style="font-weight:700;background:var(--bg3)">
+    <td class="yoy-td">Итого</td>
+    <td class="yoy-td">${fmtN(totalCons1.e,0)}</td><td class="yoy-td">${fmtN(totalCons2.e,0)}</td>
+    <td class="yoy-td ${dCls(totalCons1.e,totalCons2.e)}">${dStr(totalCons1.e,totalCons2.e)}</td>
+    <td class="yoy-td">${fmtN(totalCons1.w,2)}</td><td class="yoy-td">${fmtN(totalCons2.w,2)}</td>
+    <td class="yoy-td ${dCls(totalCons1.w,totalCons2.w)}">${dStr(totalCons1.w,totalCons2.w)}</td>
+    <td class="yoy-td">${fmtN(totalCons1.h,1)}</td><td class="yoy-td">${fmtN(totalCons2.h,1)}</td>
+    <td class="yoy-td ${dCls(totalCons1.h,totalCons2.h)}">${dStr(totalCons1.h,totalCons2.h)}</td>
+    <td class="yoy-td">${fmtE(totalCons1.c)}</td><td class="yoy-td">${fmtE(totalCons2.c)}</td>
+    <td class="yoy-td ${dCls(totalCons1.c,totalCons2.c)}">${dStr(totalCons1.c,totalCons2.c)}</td>
+  </tr>`;
+  tableEl.innerHTML = rowsHtml + '</tbody>';
+}
+
+// ── Main render ───────────────────────────────────────────────
+function renderAnalytics() {
+  const all = getAllMonthlyData();
+
+  // Always render summary stats (current month)
+  renderSummaryStats(all);
+
+  // Init year selectors
+  const allKeys=[...new Set([...Object.keys(all.elec),...Object.keys(all.bath),...Object.keys(all.heat)])].sort();
+  initYearSelectors(allKeys);
+
+  if(analyticsView==='yoy') { renderYoY(all); return; }
+  if(analyticsView==='daily') { renderDailyView(); return; }
+
+  // ── Monthly view ──────────────────────────────────────────
+  const P = analyticsPeriod;
+  const gv = (obj,k,f)=>{ const e=obj[k]; return e?(e[f]||0):0; };
+  let keys = allKeys;
+  if(P>0){
+    const now=new Date();
+    const cutoff=new Date(now.getFullYear(), now.getMonth()-P, 1);
+    const ck=`${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}`;
+    keys=keys.filter(k=>k>=ck);
+  }
+  const labels = keys.map(fmtMKey);
+
+  const eVals = keys.map(k=>+gv(all.elec,k,'cons').toFixed(0));
+  const bVals = keys.map(k=>+gv(all.bath,k,'cons').toFixed(2));
+  const kVals = keys.map(k=>+gv(all.kitch,k,'cons').toFixed(2));
+  const hVals = keys.map(k=>+gv(all.heat,k,'cons').toFixed(1));
+  const wVals = keys.map((k,i)=>+(bVals[i]+kVals[i]).toFixed(2));
+
+  makeChart('chart-elec', labels, [
+    {label:'кВт·ч', data:eVals, backgroundColor:'rgba(245,158,11,.7)',borderColor:'#f59e0b',borderWidth:1,borderRadius:3},
+    avgDataset('', eVals, '#f59e0b'),
+  ],'кВт·ч');
+
+  makeChart('chart-water', labels, [
+    {label:'🚿 Ванная', data:bVals,  backgroundColor:'rgba(59,130,246,.7)',borderColor:'#3b82f6',borderWidth:1,borderRadius:3},
+    {label:'🍳 Кухня',  data:kVals,  backgroundColor:'rgba(16,185,129,.7)',borderColor:'#10b981',borderWidth:1,borderRadius:3},
+    avgDataset('', wVals, '#94a3b8'),
+  ],'м³');
+
+  makeChart('chart-heat', labels, [
+    {label:'взв.ед', data:hVals, backgroundColor:'rgba(239,68,68,.7)',borderColor:'#ef4444',borderWidth:1,borderRadius:3},
+    avgDataset('', hVals, '#ef4444'),
+  ],'взв.ед');
+
+  const eFixed=keys.map(k=>monthFixed('electricity',k));
+  const wFixed=keys.map(k=>monthFixed('water',k));
+  const hFixed=keys.map(k=>monthFixed('heating',k));
+  const costTotals = keys.map(k=>monthTotalCost(k,all));
+
+  makeChart('chart-cost', labels, [
+    {label:'⚡ пер.',  data:keys.map(k=>+gv(all.elec,k,'cost').toFixed(2)),  backgroundColor:'rgba(245,158,11,.75)',borderColor:'#f59e0b',borderWidth:1,stack:'s'},
+    {label:'⚡ фикс.', data:eFixed,  backgroundColor:'rgba(245,158,11,.3)', borderColor:'#f59e0b',borderWidth:1,stack:'s'},
+    {label:'💧 пер.',  data:keys.map(k=>{return +((all.bath[k]?.cost||0)+(all.kitch[k]?.cost||0)).toFixed(2);}), backgroundColor:'rgba(59,130,246,.75)',borderColor:'#3b82f6',borderWidth:1,stack:'s'},
+    {label:'💧 фикс.', data:wFixed,  backgroundColor:'rgba(59,130,246,.3)', borderColor:'#3b82f6',borderWidth:1,stack:'s'},
+    {label:'🌡️ пер.',  data:keys.map(k=>+gv(all.heat,k,'cost').toFixed(2)), backgroundColor:'rgba(239,68,68,.75)',borderColor:'#ef4444',borderWidth:1,stack:'s'},
+    {label:'🌡️ фикс.', data:hFixed,  backgroundColor:'rgba(239,68,68,.3)',  borderColor:'#ef4444',borderWidth:1,stack:'s'},
+    avgDataset('', costTotals, '#94a3b8'),
+  ],'€');
+}
+
+// ── Daily rate view ───────────────────────────────────────────
+function renderDailyView() {
+  const selType = document.getElementById('daily-type')?.value || 'electricity';
+  const isHeat  = selType === 'heating';
+
+  // Build point series: one point per reading interval = avg units/day
+  function buildSeries(type) {
+    const sorted = getTypeReadings(type);
+    const pts = [];
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i-1], curr = sorted[i];
+      if (curr.is_reset || curr.value < prev.value) continue;
+      const days = Math.round(daysBetween(prev.date, curr.date));
+      if (days <= 0) continue;
+      const rate = (curr.value - prev.value) / days;
+      pts.push({ x: curr.date, y: +rate.toFixed(4) });
+    }
+    return pts;
+  }
+
+  // Period filter
+  let cutoffDate = null;
+  if (dailyPeriod > 0) {
+    const d = new Date(); d.setMonth(d.getMonth() - dailyPeriod);
+    cutoffDate = d.toISOString().slice(0,10);
+  }
+  function filterPts(pts) { return cutoffDate ? pts.filter(p => p.x >= cutoffDate) : pts; }
+
+  const COLORS = {
+    electricity:      '#f59e0b',
+    water_bathroom:   '#3b82f6',
+    water_kitchen:    '#10b981',
+    heating_bathroom: '#ef4444',
+    heating_kitchen:  '#f97316',
+    heating_bedroom:  '#a855f7',
+    heating_kids:     '#ec4899',
+    heating_living:   '#06b6d4',
+  };
+  const ROOM_LABELS = {
+    heating_bathroom:'Ванная', heating_kitchen:'Кухня',
+    heating_bedroom:'Спальная', heating_kids:'Детская', heating_living:'Зал'
+  };
+
+  const dailyCard = document.getElementById('daily-rooms-card');
+
+  if (!isHeat) {
+    // Single-type line chart
+    const pts = filterPts(buildSeries(selType));
+    const labels = pts.map(p => fmtDate(p.x));
+    const data   = pts.map(p => p.y);
+    const unit   = TYPES[selType].unit;
+    const color  = COLORS[selType] || '#94a3b8';
+    const titleEl = document.getElementById('daily-chart-title');
+    if (titleEl) titleEl.textContent = `${TYPES[selType].label} — потребление ${unit}/день между показаниями`;
+    makeChart('chart-daily', labels, [{
+      type: 'line', label: unit+'/день', data,
+      borderColor: color, backgroundColor: color+'33',
+      borderWidth: 2, pointRadius: 3, fill: true, tension: 0.3,
+    }], unit+'/день', {stacked: false, type:'line'});
+    if (dailyCard) dailyCard.style.display = 'none';
+  } else {
+    // Heating: total weighted units/day chart
+    const heatPts = [];
+    {
+      const allByDate = {};
+      for (const type of HEATING_TYPES) {
+        const sorted = getTypeReadings(type);
+        for (let i = 1; i < sorted.length; i++) {
+          const prev = sorted[i-1], curr = sorted[i];
+          if (curr.is_reset || curr.value < prev.value) continue;
+          const days = Math.round(daysBetween(prev.date, curr.date));
+          if (days <= 0) continue;
+          const rate = (curr.value - prev.value) / days * TYPES[type].factor;
+          if (!allByDate[curr.date]) allByDate[curr.date] = 0;
+          allByDate[curr.date] += rate;
+        }
+      }
+      const sorted = Object.entries(allByDate).sort((a,b)=>a[0].localeCompare(b[0]));
+      for (const [x, y] of sorted) {
+        if (cutoffDate && x < cutoffDate) continue;
+        heatPts.push({ x, y: +y.toFixed(3) });
+      }
+    }
+    const titleEl = document.getElementById('daily-chart-title');
+    if (titleEl) titleEl.textContent = '🌡️ Отопление суммарно (взв.ед/день)';
+    makeChart('chart-daily', heatPts.map(p=>fmtDate(p.x)), [{
+      type:'line', label:'взв.ед/день', data: heatPts.map(p=>p.y),
+      borderColor:'#ef4444', backgroundColor:'#ef444433',
+      borderWidth:2, pointRadius:3, fill:true, tension:0.3,
+    }], 'взв.ед/день', {stacked:false, type:'line'});
+
+    // Rooms chart
+    if (dailyCard) dailyCard.style.display = '';
+    const roomDatasets = HEATING_TYPES.map(type => {
+      const pts = filterPts(buildSeries(type));
+      return {
+        type:'line', label: ROOM_LABELS[type]||type,
+        data: pts.map(p=>p.y),
+        borderColor: COLORS[type], backgroundColor: COLORS[type]+'22',
+        borderWidth:1.5, pointRadius:2, fill:false, tension:0.3,
+        // Align with all dates union — use sparse approach
+        // Actually build a dict
+        _pts: pts
+      };
+    });
+    // Collect all dates from all rooms
+    const allDates = [...new Set(HEATING_TYPES.flatMap(type => filterPts(buildSeries(type)).map(p=>p.x)))].sort();
+    const roomDs = HEATING_TYPES.map((type, i) => {
+      const ptMap = Object.fromEntries(filterPts(buildSeries(type)).map(p=>[p.x, p.y]));
+      return {
+        type:'line', label: ROOM_LABELS[type]||type,
+        data: allDates.map(d => ptMap[d] ?? null),
+        borderColor: COLORS[type], backgroundColor: COLORS[type]+'22',
+        borderWidth:1.5, pointRadius:2, fill:false, tension:0.3,
+        spanGaps: false
+      };
+    });
+    makeChart('chart-daily-rooms', allDates.map(fmtDate), roomDs, 'ед/день', {stacked:false, type:'line'});
+  }
+}
+
+// ─── IMPORT TARIFFS FROM SHEET ───────────────────────────────
+const TARIFF_TYPE_MAP = {
+  'электр': 'electricity',
+  'вода':   'water',
+  'отопл':  'heating',
+};
+
+function mapTariffType(raw) {
+  const t = raw.trim().toLowerCase();
+  for(const [key, val] of Object.entries(TARIFF_TYPE_MAP)) {
+    if(t.includes(key)) return val;
+  }
+  return null;
+}
+
+let parsedTariffRows = [];
+
+function previewTariffImport() {
+  const text = document.getElementById('tariff-import-text').value;
+  const lines = text.split('\n').map(l=>l.trim()).filter(l=>l);
+  parsedTariffRows = [];
+  const errors = [], skipped = [];
+
+  // Detect header
+  let startIdx = 0;
+  if(lines.length && /дат|date|тип|type/i.test(lines[0])) startIdx = 1;
+
+  // Detect column indices
+  let colDate=0, colType=1, colFixed=2, colRate=3;
+  if(startIdx===1) {
+    const hcols = lines[0].split('\t').map(c=>c.trim().toLowerCase());
+    const di = hcols.findIndex(c=>c.includes('дат')||c.includes('date'));
+    const ti = hcols.findIndex(c=>c==='тип'||c==='type'||c.includes('тип'));
+    const fi = hcols.findIndex(c=>c.includes('фикс')||c.includes('fixed'));
+    const ri = hcols.findIndex(c=>c.includes('цен')||c.includes('unit')||c.includes('price'));
+    if(di>=0) colDate=di;
+    if(ti>=0) colType=ti;
+    if(fi>=0) colFixed=fi;
+    if(ri>=0) colRate=ri;
+  }
+
+  for(let i=startIdx; i<lines.length; i++) {
+    const parts = lines[i].split('\t');
+    const needed = Math.max(colDate, colType, colFixed, colRate) + 1;
+    if(parts.length < needed) {
+      // Try with just 4 columns if colRate < parts.length
+      if(parts.length < 3) { errors.push(`Стр.${i+1}: мало колонок`); continue; }
+    }
+
+    const dateStr  = (parts[colDate]||'').trim();
+    const typeStr  = (parts[colType]||'').trim();
+    const fixedStr = (parts[colFixed]||'0').trim();
+    const rateStr  = (parts[Math.min(colRate, parts.length-1)]||'').trim();
+
+    const date = parseSheetDate(dateStr);
+    if(!date) { errors.push(`Стр.${i+1}: дата "${dateStr}"`); continue; }
+
+    const type = mapTariffType(typeStr);
+    if(!type) { errors.push(`Стр.${i+1}: тип "${typeStr}"`); continue; }
+
+    const fixed_cost = parseSheetValue(fixedStr);
+    const rate = parseSheetValue(rateStr);
+    if(isNaN(rate)) { errors.push(`Стр.${i+1}: цена "${rateStr}"`); continue; }
+
+    // Check duplicate
+    const exists = tariffs.some(t=>t.type===type && t.effective_from===date);
+    if(exists) { skipped.push(`${date} ${type}`); continue; }
+
+    parsedTariffRows.push({effective_from: date, type, fixed_cost: isNaN(fixed_cost)?0:fixed_cost, rate});
+  }
+
+  // Stats
+  const statsEl = document.getElementById('tariff-import-stats');
+  const parts2 = [];
+  if(parsedTariffRows.length) parts2.push(`<span style="color:var(--success)">✅ ${parsedTariffRows.length} тарифов готово</span>`);
+  if(skipped.length) parts2.push(`<span style="color:var(--muted)">⏭ ${skipped.length} уже есть</span>`);
+  if(errors.length) parts2.push(`<span style="color:var(--heat)">❌ ${errors.length} ошибок</span>`);
+  statsEl.innerHTML = parts2.join(' · ');
+
+  const errEl = document.getElementById('tariff-import-errors');
+  if(errors.length) { errEl.style.display='block'; errEl.innerHTML=errors.join('<br>'); }
+  else errEl.style.display='none';
+
+  const wrap = document.getElementById('tariff-import-preview-wrap');
+  const typeLabels = {electricity:'⚡ Электричество', water:'💧 Вода', heating:'🌡️ Отопление'};
+  if(parsedTariffRows.length) {
+    wrap.style.display='block';
+    document.getElementById('tariff-import-preview-body').innerHTML = parsedTariffRows.map(r=>`
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:5px 10px">${fmtDate(r.effective_from)}</td>
+        <td style="padding:5px 10px">${typeLabels[r.type]||r.type}</td>
+        <td style="padding:5px 10px">${r.fixed_cost}</td>
+        <td style="padding:5px 10px">${r.rate}</td>
+        <td style="padding:5px 10px;color:var(--success);font-size:11px">добавить</td>
+      </tr>`).join('');
+  } else {
+    wrap.style.display='none';
+  }
+
+  const btn = document.getElementById('do-tariff-import-btn');
+  btn.disabled = parsedTariffRows.length===0;
+  btn.textContent = parsedTariffRows.length ? `Загрузить ${parsedTariffRows.length}` : 'Загрузить';
+}
+
+async function doTariffImport() {
+  if(!parsedTariffRows.length) return;
+  const btn = document.getElementById('do-tariff-import-btn');
+  btn.disabled = true; btn.textContent = 'Загружаю…';
+  try {
+    const {data, error} = await sb.from('tariffs').insert(parsedTariffRows).select();
+    if(error) throw error;
+    tariffs.push(...data);
+    closeTariffImportModal();
+    renderTariffsTable();
+    toast(`Загружено ${data.length} тарифов`,'ok');
+  } catch(e) {
+    toast('Ошибка: '+e.message,'err');
+    btn.disabled=false;
+    btn.textContent=`Загрузить ${parsedTariffRows.length}`;
+  }
+}
+
+function openTariffImportModal() {
+  document.getElementById('tariff-import-text').value='';
+  document.getElementById('tariff-import-stats').innerHTML='';
+  document.getElementById('tariff-import-errors').style.display='none';
+  document.getElementById('tariff-import-preview-wrap').style.display='none';
+  document.getElementById('do-tariff-import-btn').disabled=true;
+  document.getElementById('do-tariff-import-btn').textContent='Загрузить';
+  parsedTariffRows=[];
+  document.getElementById('tariff-import-modal').classList.add('open');
+}
+function closeTariffImportModal() { document.getElementById('tariff-import-modal').classList.remove('open'); }
+
+// ─── IMPORT FROM SHEET ────────────────────────────────────────
+const TYPE_MAP = {
+  'электричество': {fn:(room)=>'electricity'},
+  'вода':          {fn:(room)=> room.includes('кухн')?'water_kitchen':'water_bathroom'},
+  'отопление':     {fn:(room)=>{
+    if(room.includes('ванн'))   return 'heating_bathroom';
+    if(room.includes('кухн'))   return 'heating_kitchen';
+    if(room.includes('спальн')) return 'heating_bedroom';
+    if(room.includes('детск'))  return 'heating_kids';
+    if(room.includes('зал')||room.includes('гостин')) return 'heating_living';
+    return null;
+  }},
+};
+
+function parseSheetDate(s) {
+  const m = s.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if(!m) return null;
+  return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+}
+
+function parseSheetValue(s) {
+  return parseFloat(s.replace(/\s/g,'').replace(',','.'));
+}
+
+function mapType(typeRaw, roomRaw) {
+  const t = typeRaw.trim().toLowerCase();
+  const r = (roomRaw||'').trim().toLowerCase();
+  for(const [key, cfg] of Object.entries(TYPE_MAP)) {
+    if(t.includes(key)) return cfg.fn(r);
+  }
+  return null;
+}
+
+let parsedImportRows = [];
+
+function previewImport() {
+  const text = document.getElementById('import-text').value;
+  const lines = text.split('\n').map(l=>l.trim()).filter(l=>l);
+  parsedImportRows = [];
+  const errors = [];
+  const skipped = [];
+
+  // Detect header
+  let startIdx = 0;
+  if(lines.length && /дат|date|тип|type/i.test(lines[0])) startIdx = 1;
+
+  // Detect column indices from header or assume default
+  let colDate=0, colType=1, colRoom=2, colValue=3;
+  if(startIdx===1) {
+    const hcols = lines[0].split('\t').map(c=>c.trim().toLowerCase());
+    const di = hcols.findIndex(c=>c.includes('дат')||c==='date');
+    const ti = hcols.findIndex(c=>c==='type'||c.includes('тип'));
+    const ri = hcols.findIndex(c=>c==='room'||c.includes('ком'));
+    const vi = hcols.findIndex(c=>c.includes('показ')||c.includes('value')||c.includes('знач'));
+    if(di>=0) colDate=di;
+    if(ti>=0) colType=ti;
+    if(ri>=0) colRoom=ri;
+    if(vi>=0) colValue=vi;
+  }
+
+  for(let i=startIdx; i<lines.length; i++) {
+    const parts = lines[i].split('\t');
+    if(parts.length < Math.max(colDate,colType,colValue)+1) {
+      errors.push(`Стр.${i+1}: мало колонок (${parts.length})`); continue;
+    }
+    const dateStr  = parts[colDate]||'';
+    const typeStr  = parts[colType]||'';
+    const roomStr  = colRoom < parts.length ? (parts[colRoom]||'') : '';
+    const valueStr = parts[colValue]||'';
+
+    const date = parseSheetDate(dateStr);
+    if(!date){ errors.push(`Стр.${i+1}: дата "${dateStr}"`); continue; }
+
+    const value = parseSheetValue(valueStr);
+    if(isNaN(value)){ errors.push(`Стр.${i+1}: значение "${valueStr}"`); continue; }
+
+    const type = mapType(typeStr, roomStr);
+    if(!type){ errors.push(`Стр.${i+1}: тип "${typeStr}" комната "${roomStr}"`); continue; }
+
+    // Detect reset: value < last reading of this type
+    const sorted = getTypeReadings(type);
+    const last = sorted.length ? sorted[sorted.length-1] : null;
+    const is_reset = !!(last && value < last.value);
+
+    // Check duplicate
+    const exists = readings.some(r=>r.date===date&&r.type===type&&r.value===value);
+    if(exists){ skipped.push(`${date} ${type}`); continue; }
+
+    parsedImportRows.push({date, type, value, is_reset});
+  }
+
+  // Stats
+  const statsEl = document.getElementById('import-stats');
+  const parts2 = [];
+  if(parsedImportRows.length) parts2.push(`<span style="color:var(--success)">✅ ${parsedImportRows.length} строк готово</span>`);
+  if(skipped.length) parts2.push(`<span style="color:var(--muted)">⏭ ${skipped.length} уже есть</span>`);
+  if(errors.length) parts2.push(`<span style="color:var(--heat)">❌ ${errors.length} ошибок</span>`);
+  statsEl.innerHTML = parts2.join(' · ');
+
+  // Errors
+  const errEl = document.getElementById('import-errors');
+  if(errors.length){ errEl.style.display='block'; errEl.innerHTML=errors.join('<br>'); }
+  else errEl.style.display='none';
+
+  // Preview
+  const wrap = document.getElementById('import-preview-wrap');
+  if(parsedImportRows.length) {
+    wrap.style.display='block';
+    const tbody = document.getElementById('import-preview-body');
+    tbody.innerHTML = parsedImportRows.slice(0,200).map(r=>{
+      const cfg = TYPES[r.type];
+      const resetBadge = r.is_reset ? ' <span style="color:#f87171;font-size:10px">⚠️ замена?</span>' : '';
+      return `<tr style="border-top:1px solid var(--border)">
+        <td style="padding:5px 10px">${fmtDate(r.date)}</td>
+        <td style="padding:5px 10px"><span class="tag ${cfg.tag}">${cfg.label}</span></td>
+        <td style="padding:5px 10px">${r.value} ${cfg.unit}${resetBadge}</td>
+        <td style="padding:5px 10px;color:var(--success);font-size:11px">добавить</td>
+      </tr>`;
+    }).join('');
+    if(parsedImportRows.length>200) {
+      document.getElementById('import-preview-body').innerHTML += `<tr><td colspan="4" style="padding:8px 10px;color:var(--muted);text-align:center">…ещё ${parsedImportRows.length-200} строк</td></tr>`;
+    }
+  } else {
+    wrap.style.display='none';
+  }
+
+  document.getElementById('do-import-btn').disabled = parsedImportRows.length===0;
+  document.getElementById('do-import-btn').textContent = parsedImportRows.length ? `Загрузить ${parsedImportRows.length}` : 'Загрузить';
+}
+
+async function doImport() {
+  if(!parsedImportRows.length) return;
+  const btn = document.getElementById('do-import-btn');
+  btn.disabled = true;
+
+  // Ask about resets
+  const resets = parsedImportRows.filter(r=>r.is_reset);
+  if(resets.length) {
+    const ok = confirm(`Обнаружено ${resets.length} записей где значение меньше предыдущего.\nОтметить их как замену счётчика?`);
+    if(!ok) parsedImportRows.forEach(r=>{ if(r.is_reset) r.is_reset=false; });
+  }
+
+  try {
+    const CHUNK = 50;
+    for(let i=0; i<parsedImportRows.length; i+=CHUNK) {
+      btn.textContent = `Загружаю… ${Math.min(i+CHUNK,parsedImportRows.length)}/${parsedImportRows.length}`;
+      const {error} = await sb.from('readings').insert(parsedImportRows.slice(i,i+CHUNK));
+      if(error) throw error;
+    }
+    await loadAll();
+    closeImportModal();
+    renderReadingsTable();
+    toast(`Загружено ${parsedImportRows.length} показаний`,'ok');
+  } catch(e) {
+    toast('Ошибка: '+e.message,'err');
+    btn.disabled=false;
+    btn.textContent=`Загрузить ${parsedImportRows.length}`;
+  }
+}
+
+function openImportModal() {
+  document.getElementById('import-text').value='';
+  document.getElementById('import-stats').innerHTML='';
+  document.getElementById('import-errors').style.display='none';
+  document.getElementById('import-preview-wrap').style.display='none';
+  document.getElementById('do-import-btn').disabled=true;
+  document.getElementById('do-import-btn').textContent='Загрузить';
+  parsedImportRows=[];
+  document.getElementById('import-modal').classList.add('open');
+}
+function closeImportModal(){ document.getElementById('import-modal').classList.remove('open'); }
+
+// ═══════════════════════════════════════════════════════════════
+// BUDGET / ADVANCES PAGE
+// ═══════════════════════════════════════════════════════════════
+
+let editingAdvanceId = null, editingSettlementId = null;
+let budgetYear = new Date().getFullYear();
+let inflationPct = 0;
+let elecPeriodFrom = localStorage.getItem('elecPeriodFrom') || null;
+
+// ── Helpers ────────────────────────────────────────────────────
+function getLastSettlement(type) {
+  const s = settlements.filter(x => x.type === type);
+  if (!s.length) return null;
+  return s.reduce((a, b) => b.period_year > a.period_year ? b : a);
+}
+
+function getSettlementForYear(type, year) {
+  return settlements.find(s => s.type === type && s.period_year === year) || null;
+}
+
+function isLeapYear(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+
+// Return {fromDate, toDate, isCurrent, isPast}
+function getBudgetPeriod() {
+  const curYear = new Date().getFullYear();
+  const fromDate = `${budgetYear}-01-01`;
+  const toDate   = budgetYear < curYear
+    ? `${budgetYear}-12-31`
+    : new Date().toISOString().slice(0, 10);
+  return { fromDate, toDate, isCurrent: budgetYear === curYear, isPast: budgetYear < curYear };
+}
+
+function getBudgetYears() {
+  const s = new Set([new Date().getFullYear(), new Date().getFullYear() - 1]);
+  for (const a of advances)    s.add(parseInt(a.effective_from.slice(0,4)));
+  for (const x of settlements) { s.add(x.period_year); s.add(x.period_year + 1); }
+  return [...s].sort();
+}
+
+// ── Electricity period helpers ────────────────────────────────
+function getElecPeriodFrom() {
+  if (elecPeriodFrom) return elecPeriodFrom;
+  // Default: day after last electricity settlement coverage, or Jan 1 of current year
+  const lastE = getLastSettlement('electricity');
+  if (lastE) return `${lastE.period_year + 1}-01-01`;
+  return `${new Date().getFullYear()}-01-01`;
+}
+
+function setElecPeriodFrom(val) {
+  elecPeriodFrom = val || null;
+  if (val) localStorage.setItem('elecPeriodFrom', val);
+  else localStorage.removeItem('elecPeriodFrom');
+  renderElecPeriodHint();
+  renderElecCard();
+}
+
+function renderElecPeriodHint() {
+  const el = document.getElementById('elec-period-hint');
+  if (!el) return;
+  const from = getElecPeriodFrom();
+  const today = new Date().toISOString().slice(0,10);
+  const days = Math.round((new Date(today) - new Date(from)) / 86400000);
+  el.textContent = from ? `${days} дн. с ${fmtDate(from)} по сегодня` : '';
+}
+
+// Prorate a monthly amount across calendar months (exact month counting)
+function calcMonthProrated(monthlyAmount, start, end) {
+  let total = 0;
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endTime = end.getTime();
+  while (cur.getTime() <= endTime) {
+    const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+    const dInMonth = mEnd.getDate();
+    const overlapStart = new Date(Math.max(start.getTime(), cur.getTime()));
+    const overlapEnd   = new Date(Math.min(endTime, mEnd.getTime()));
+    if (overlapEnd >= overlapStart) {
+      const days = Math.round((overlapEnd - overlapStart) / 86400000) + 1;
+      total += monthlyAmount * days / dInMonth;
+    }
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return total;
+}
+
+// Sum advances paid for a given type from fromDate through toDate (inclusive).
+// Uses exact calendar-month counting so 12 full months = exactly 12 × rate.
+function calcAdvancesPaid(type, fromDate, toDate) {
+  const relevant = advances.filter(a => a.type === type)
+    .sort((a,b) => a.effective_from.localeCompare(b.effective_from));
+  if (!relevant.length) return 0;
+  const from = new Date(fromDate), to = new Date(toDate);
+  if (to < from) return 0;
+  let total = 0;
+  for (let i = 0; i < relevant.length; i++) {
+    const adv = relevant[i], next = relevant[i+1];
+    const segStart = new Date(Math.max(new Date(adv.effective_from).getTime(), from.getTime()));
+    const segEnd   = next
+      ? new Date(Math.min(new Date(next.effective_from).getTime()-1, to.getTime()))
+      : to;
+    if (segEnd < segStart) continue;
+    total += calcMonthProrated(adv.monthly_amount, segStart, segEnd);
+  }
+  return total;
+}
+
+// Sum actual costs (variable+fixed) for category between fromDate and toDate.
+function sumCostBetween(category, fromDate, toDate) {
+  const fromKey = fromDate.slice(0,7);
+  const toKey   = toDate.slice(0,7);
+  const all = getAllMonthlyData();
+  let total = 0;
+  if (category === 'electricity') {
+    for (const [k,v] of Object.entries(all.elec))  if (k>=fromKey&&k<=toKey) total += (v.cost||0);
+  } else if (category === 'water') {
+    for (const [k,v] of Object.entries(all.bath))  if (k>=fromKey&&k<=toKey) total += (v.cost||0);
+    for (const [k,v] of Object.entries(all.kitch)) if (k>=fromKey&&k<=toKey) total += (v.cost||0);
+  } else if (category === 'heating') {
+    for (const [k,v] of Object.entries(all.heat))  if (k>=fromKey&&k<=toKey) total += (v.cost||0);
+  }
+  // Fixed costs per month
+  let cur = new Date(fromDate); cur.setDate(1);
+  const endD = new Date(toDate); endD.setDate(1);
+  while (cur <= endD) {
+    const key = cur.toISOString().slice(0,7);
+    if (key >= fromKey && key <= toKey) total += monthFixed(category, key);
+    cur.setMonth(cur.getMonth()+1);
+  }
+  return total;
+}
+
+// Legacy alias (used by other code)
+function sumCostSince(category, fromDate) {
+  return sumCostBetween(category, fromDate, new Date().toISOString().slice(0,10));
+}
+
+// ── Year selector & inflation ─────────────────────────────────
+function setBudgetYear(y) {
+  budgetYear = y;
+  renderNKCards();
+  document.querySelectorAll('.budget-year-btn').forEach(b => {
+    b.classList.toggle('btn-primary',   parseInt(b.dataset.year)===y);
+    b.classList.toggle('btn-secondary', parseInt(b.dataset.year)!==y);
+  });
+}
+
+function setInflation(val) {
+  inflationPct = parseFloat(val)||0;
+  renderElecCard();
+  renderNKCards();
+}
+
+// ── Main render ────────────────────────────────────────────────
+function renderBudgetPage() {
+  // Rebuild year buttons (data may have changed)
+  const sel = document.getElementById('budget-year-selector');
+  if (sel) {
+    sel.innerHTML = getBudgetYears().map(y =>
+      `<button class="btn btn-sm budget-year-btn ${y===budgetYear?'btn-primary':'btn-secondary'}"
+        data-year="${y}" onclick="setBudgetYear(${y})">${y}</button>`
+    ).join('');
+  }
+  // Init electricity period-from date input
+  const epInput = document.getElementById('elec-period-from');
+  if (epInput && !epInput.value) epInput.value = getElecPeriodFrom();
+  renderElecPeriodHint();
+  renderElecCard();
+  renderNKCards();
+  renderAdvancesTable();
+  renderSettlementsTable();
+  renderTariffsTable();
+}
+
+// Returns the latest effective monthly advance amount for a given type
+function getCurrentAdvanceRate(type) {
+  const today = new Date().toISOString().slice(0,10);
+  const relevant = advances.filter(a => a.type === type && a.effective_from <= today)
+    .sort((a,b) => b.effective_from.localeCompare(a.effective_from));
+  return relevant[0]?.monthly_amount || 0;
+}
+
+// ── Electricity card (own period, independent of year selector) ──
+function renderElecCard() {
+  const el = document.getElementById('elec-card-wrap');
+  if (!el) return;
+  const today = new Date().toISOString().slice(0,10);
+  const elecFrom = getElecPeriodFrom();
+  const inflFactor = 1 + inflationPct/100;
+
+  const elecPaid    = calcAdvancesPaid('electricity', elecFrom, today);
+  const currentRate = getCurrentAdvanceRate('electricity');
+  // Full-year advance = current monthly rate × 12 (apples-to-apples with annualised costs)
+  const elecFullAdv = currentRate > 0 ? currentRate * 12 * inflFactor : null;
+  const elecActual  = sumCostBetween('electricity', elecFrom, today);
+  const elecDays    = Math.max(1, (new Date(today)-new Date(elecFrom))/86400000+1);
+  const elecProj    = elecActual * (365/elecDays) * inflFactor;
+
+  el.innerHTML = budgetCard({
+    title: '⚡ Электричество',
+    subtitle: `${fmtDate(elecFrom)} — ${fmtDate(today)} (${elecDays} дн.)`,
+    budget: elecPaid, actual: elecActual, isDoc: false,
+    proj: elecProj, fullAdv: elecFullAdv,
+    docBadge: `<span style="font-size:10px;background:rgba(148,163,184,.1);color:var(--muted);padding:1px 5px;border-radius:4px;margin-left:4px">≈ тарифы</span>`,
+    note: null
+  });
+}
+
+// ── NK cards (year-selector controlled) ──────────────────────
+function renderNKCards() {
+  const el = document.getElementById('nk-cards');
+  if (!el) return;
+  const today = new Date().toISOString().slice(0,10);
+  const { fromDate, toDate, isCurrent } = getBudgetPeriod();
+  const actualTo   = isCurrent ? today : toDate;
+  const inflFactor = 1 + inflationPct/100;
+
+  // ── Proportions: use this year's settlement if available, else latest ──
+  const kommSett = getSettlementForYear('kommunalka', budgetYear);
+  const isNKDoc  = !!kommSett;
+  const propSett = isNKDoc ? kommSett : getLastSettlement('kommunalka');
+  const propGS   = propSett?.grundsteuer || 0;
+  const propBase = propSett ? (propSett.actual_total||0) + propGS : 0;
+  const waterProp = propBase>0 ? (propSett.water_portion   ||0)/propBase : 0;
+  const heatProp  = propBase>0 ? (propSett.heating_portion ||0)/propBase : 0;
+  const otherProp = propBase>0 ? ((propSett.other_portion  ||0) + propGS)/propBase : 0;
+  const propSrc   = propSett ? `NK-${propSett.period_year}` : '?';
+
+  // ── Advances & budgets ──────────────────────────────────────
+  const kommPaid    = calcAdvancesPaid('kommunalka', fromDate, toDate);
+  const waterBudget = kommPaid * waterProp;
+  const heatBudget  = kommPaid * heatProp;
+  const otherBudget = kommPaid * otherProp;
+
+  // ── Actuals ─────────────────────────────────────────────────
+  const waterActual = isNKDoc ? kommSett.water_portion    : sumCostBetween('water',   fromDate, actualTo);
+  const heatActual  = isNKDoc ? kommSett.heating_portion  : sumCostBetween('heating', fromDate, actualTo);
+  const otherActual = isNKDoc ? (kommSett.other_portion||0)+(kommSett.grundsteuer||0) : null;
+
+  // ── Projections for open year ───────────────────────────────
+  const nkDays    = Math.max(1, (new Date(actualTo)-new Date(fromDate))/86400000+1);
+  const nkAnnF    = (isLeapYear(budgetYear)?366:365)/nkDays;
+  const waterProj = isCurrent && !isNKDoc ? waterActual * nkAnnF * inflFactor : null;
+  const heatProj  = isCurrent && !isNKDoc ? heatActual  * nkAnnF * inflFactor : null;
+  const kommFull  = isCurrent && !isNKDoc ? calcAdvancesPaid('kommunalka',fromDate,`${budgetYear}-12-31`) : null;
+  const wFullAdv  = kommFull != null ? kommFull * waterProp : null;
+  const hFullAdv  = kommFull != null ? kommFull * heatProp  : null;
+
+  // ── Heating season note ─────────────────────────────────────
+  let sesMo=0, offMo=0;
+  let cc=new Date(fromDate); cc.setDate(1);
+  const endC=new Date(actualTo); endC.setDate(1);
+  while(cc<=endC){const mm=cc.getMonth()+1;(mm>=10||mm<=4)?sesMo++:offMo++;cc.setMonth(cc.getMonth()+1);}
+  const nowM=new Date().getMonth()+1;
+  const heatNote = isCurrent&&!isNKDoc ? ((nowM>=10||nowM<=4)
+    ? `🔥 Отопительный сезон · ${sesMo}м. отопл. ${offMo}м. лето`
+    : `❄️ Вне сезона · прогноз занижен`) : null;
+
+  const docBadge = (f) => f
+    ? `<span style="font-size:10px;background:rgba(34,197,94,.15);color:var(--success);padding:1px 5px;border-radius:4px;margin-left:4px">📄 из расчёта</span>`
+    : `<span style="font-size:10px;background:rgba(148,163,184,.1);color:var(--muted);padding:1px 5px;border-radius:4px;margin-left:4px">≈ тарифы</span>`;
+
+  const pct = (v) => propBase>0 ? `${fmtN(v*100,0)}% · ${propSrc}` : '?';
+
+  el.innerHTML = [
+    budgetCard({
+      title: `💧 Вода <span style="font-size:11px;color:var(--muted)">(${pct(waterProp)})</span>`,
+      subtitle: isNKDoc ? `NK-расчёт ${budgetYear}` : `${fmtDate(fromDate)} — ${fmtDate(actualTo)}`,
+      budget: waterBudget, actual: waterActual, isDoc: isNKDoc,
+      proj: waterProj, fullAdv: wFullAdv, docBadge: docBadge(isNKDoc), note: null
+    }),
+    budgetCard({
+      title: `🌡️ Отопление <span style="font-size:11px;color:var(--muted)">(${pct(heatProp)})</span>`,
+      subtitle: isNKDoc ? `NK-расчёт ${budgetYear}` : `${fmtDate(fromDate)} — ${fmtDate(actualTo)}`,
+      budget: heatBudget, actual: heatActual, isDoc: isNKDoc,
+      proj: heatProj, fullAdv: hFullAdv, docBadge: docBadge(isNKDoc), note: heatNote
+    }),
+    budgetCard({
+      title: `🏠 Прочее NK <span style="font-size:11px;color:var(--muted)">(${pct(otherProp)})</span>`,
+      subtitle: isNKDoc ? `NK-расчёт ${budgetYear}` : 'бюджет на основе пропорций',
+      budget: otherBudget, actual: otherActual, isDoc: isNKDoc,
+      proj: null, fullAdv: null, docBadge: isNKDoc ? docBadge(true) : '',
+      note: !isNKDoc ? '📋 Grundsteuer, уборка, страховка — из NK-документа' : null
+    }),
+  ].join('');
+}
+
+function budgetCard({ title, subtitle, budget, actual, isDoc, proj, fullAdv, docBadge, note }) {
+  const hasActual = actual != null;
+  const delta     = hasActual ? budget - actual : null;
+  const good      = delta == null || delta >= 0;
+  const color     = good ? 'var(--success)' : 'var(--heat)';
+  const inflStr   = inflationPct !== 0 ? ` +${inflationPct}%` : '';
+
+  const deltaBlock = delta != null
+    ? `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:8px">
+        <span style="color:${color};font-size:22px;font-weight:700;line-height:1">${good?'▲':'▼'}</span>
+        <div>
+          <div style="font-size:16px;font-weight:700;color:${color}">${fmtE(Math.abs(delta))}</div>
+          <div style="font-size:11px;color:var(--muted)">${good?'профицит':'дефицит'}</div>
+        </div>
+      </div>`
+    : `<div style="padding:8px 10px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--muted)">
+        Данных нет — будут из NK-расчёта за ${budgetYear}
+      </div>`;
+
+  let projHtml = '';
+  if (proj != null) {
+    const advGood = fullAdv != null && fullAdv >= proj;
+    projHtml = `<div style="margin-top:8px;padding:7px 10px;background:var(--bg2);border-radius:7px;font-size:12px">
+      <div style="color:var(--muted);margin-bottom:3px">📈 Прогноз на год${inflStr}</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <span>Затраты ≈ <strong>${fmtE(proj)}</strong></span>
+        ${fullAdv!=null?`<span>Авансы ≈ <strong>${fmtE(fullAdv)}</strong></span>
+          <span style="color:${advGood?'var(--success)':'var(--heat)'}">
+            ${advGood?'▲':'▼'} ${fmtE(Math.abs(fullAdv-proj))}
+          </span>`:''}
+      </div>
+    </div>`;
+  }
+  if (note) projHtml += `<div style="font-size:11px;color:var(--muted);margin-top:6px;padding:5px 8px;background:var(--bg2);border-radius:6px">${note}</div>`;
+
+  return `<div class="card" style="min-width:255px">
+    <div class="card-top"><div class="card-title">${title}</div></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${subtitle}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div>
+        <div style="font-size:11px;color:var(--muted)">Авансы</div>
+        <div style="font-size:17px;font-weight:700">${fmtE(budget)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted)">Факт. затраты ${docBadge||''}</div>
+        <div style="font-size:17px;font-weight:700">${hasActual ? fmtE(actual) : '—'}</div>
+      </div>
+    </div>
+    ${deltaBlock}
+    ${projHtml}
+  </div>`;
+}
+
+// ── Advances table ─────────────────────────────────────────────
+function renderAdvancesTable() {
+  const tbody = document.getElementById('advances-tbody');
+  if (!tbody) return;
+  if (!advances.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:14px">Нет данных</td></tr>';
+    return;
+  }
+  const typeLabels = { electricity: '⚡ Электричество', kommunalka: '🏠 Коммуналка' };
+  const sorted = [...advances].sort((a,b) => b.effective_from.localeCompare(a.effective_from));
+  tbody.innerHTML = sorted.map(a => `
+    <tr>
+      <td class="row-head">${typeLabels[a.type]||a.type}<span style="color:var(--muted);font-weight:500;font-size:12.5px">с ${fmtDate(a.effective_from)}</span></td>
+      <td data-l="В месяц"><strong>${fmtE(a.monthly_amount)}</strong></td>
+      <td class="row-actions" style="text-align:right">
+        <button class="btn btn-secondary btn-sm" onclick="openAdvanceModal(${a.id})">✏️ Изменить</button>
+        <button class="btn btn-ghost" onclick="deleteAdvance(${a.id})">🗑 Удалить</button>
+      </td>
+    </tr>`).join('');
+}
+
+// ── Settlements table ──────────────────────────────────────────
+function renderSettlementsTable() {
+  const tbody = document.getElementById('settlements-tbody');
+  if (!tbody) return;
+  if (!settlements.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:14px">Нет данных</td></tr>';
+    return;
+  }
+  const typeLabels = { electricity: '⚡ Электр.', kommunalka: '🏠 NK' };
+  const sorted = [...settlements].sort((a,b) => b.period_year-a.period_year || b.type.localeCompare(a.type));
+  tbody.innerHTML = sorted.map(s => {
+    const isK = s.type==='kommunalka';
+    const corr = s.correction||0;
+    const corrColor = corr<0?'var(--success)':corr>0?'var(--heat)':'';
+    const waterStr = isK && s.water_portion!=null
+      ? `${fmtE(s.water_portion)}<br><span style="font-size:10px;color:var(--muted)">${s.water_fixed!=null?fmtE(s.water_fixed)+' фикс':''}${s.water_variable!=null?' + '+fmtE(s.water_variable)+' пер.':''}</span>`
+      : '—';
+    const heatStr = isK && s.heating_portion!=null
+      ? `${fmtE(s.heating_portion)}<br><span style="font-size:10px;color:var(--muted)">${s.heating_fixed!=null?fmtE(s.heating_fixed)+' фикс':''}${s.heating_variable!=null?' + '+fmtE(s.heating_variable)+' пер.':''}</span>`
+      : '—';
+    return `<tr>
+      <td class="row-head">${typeLabels[s.type]||s.type} ${s.period_year}<span style="color:var(--muted);font-weight:500;font-size:12.5px">${fmtDate(s.settlement_date)}</span></td>
+      <td data-l="Итого"><strong>${fmtE((s.actual_total||0)+(s.grundsteuer||0))}</strong>${s.grundsteuer?`<span style="font-size:10px;color:var(--muted)"> (${fmtE(s.actual_total)} + ${fmtE(s.grundsteuer)} Grundst.)</span>`:''}</td>
+      <td data-l="💧 Вода"><span>${waterStr}</span></td>
+      <td data-l="🌡️ Отопл."><span>${heatStr}</span></td>
+      <td data-l="🏠 Прочее">${isK ? (s.other_portion!=null||s.grundsteuer!=null
+        ? `<span>${s.other_portion!=null?fmtE(s.other_portion):'—'}${s.grundsteuer!=null?` <span style="font-size:10px;color:var(--muted)">+${fmtE(s.grundsteuer)} Grundst.</span>`:''}</span>`
+        : '<span>—</span>') : '<span>—</span>'}</td>
+      <td data-l="Корректировка"><span style="color:${corrColor};font-weight:650">${corr?fmtE(corr):'—'}</span></td>
+      <td class="row-actions" style="text-align:right">
+        <button class="btn btn-secondary btn-sm" onclick="openSettlementModal(${s.id})">✏️ Изменить</button>
+        <button class="btn btn-ghost" onclick="deleteSettlement(${s.id})">🗑 Удалить</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Advance Import ─────────────────────────────────────────────
+let parsedAdvanceRows = [];
+
+function openAdvanceImportModal() {
+  parsedAdvanceRows=[];
+  document.getElementById('adv-import-text').value='';
+  document.getElementById('adv-import-stats').innerHTML='';
+  document.getElementById('adv-import-errors').style.display='none';
+  document.getElementById('adv-import-preview-wrap').style.display='none';
+  document.getElementById('do-adv-import-btn').disabled=true;
+  document.getElementById('advance-import-modal').classList.add('open');
+}
+function closeAdvanceImportModal() { document.getElementById('advance-import-modal').classList.remove('open'); }
+
+function previewAdvanceImport() {
+  const lines=document.getElementById('adv-import-text').value.split('\n').map(l=>l.trim()).filter(l=>l);
+  parsedAdvanceRows=[]; const errors=[],skipped=[];
+  const sep=lines[0]?.includes('\t')?'\t':';';
+  let start=0; if(lines.length&&/дат|date|тип|type/i.test(lines[0]))start=1;
+  for(let i=start;i<lines.length;i++){
+    const parts=lines[i].split(sep).map(p=>p.trim());
+    if(parts.length<3){errors.push(`Стр.${i+1}: мало колонок`);continue;}
+    const [dateStr,typeStr,amtStr]=parts;
+    let date=null;
+    const m1=dateStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/),m2=dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(m1) date=`${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`;
+    else if(m2) date=dateStr;
+    else{errors.push(`Стр.${i+1}: дата "${dateStr}"`);continue;}
+    const t=typeStr.toLowerCase();
+    let type=null;
+    if(t.includes('electr')||t.includes('электр'))type='electricity';
+    else if(t.includes('komm')||t.includes('комм')||t.includes('nk'))type='kommunalka';
+    else{errors.push(`Стр.${i+1}: тип "${typeStr}"`);continue;}
+    const amount=parseFloat(amtStr.replace(',','.'));
+    if(isNaN(amount)||amount<=0){errors.push(`Стр.${i+1}: сумма "${amtStr}"`);continue;}
+    if(advances.some(a=>a.effective_from===date&&a.type===type)){skipped.push(`${date} ${type}`);continue;}
+    parsedAdvanceRows.push({effective_from:date,type,monthly_amount:amount});
+  }
+  const typeLabels={electricity:'⚡ Электричество',kommunalka:'🏠 Коммуналка'};
+  const stats=[];
+  if(parsedAdvanceRows.length)stats.push(`<span style="color:var(--success)">✅ ${parsedAdvanceRows.length} готово</span>`);
+  if(skipped.length)stats.push(`<span style="color:var(--muted)">⏭ ${skipped.length} уже есть</span>`);
+  if(errors.length)stats.push(`<span style="color:var(--heat)">❌ ${errors.length} ошибок</span>`);
+  document.getElementById('adv-import-stats').innerHTML=stats.join(' · ');
+  const errEl=document.getElementById('adv-import-errors');
+  if(errors.length){errEl.style.display='block';errEl.innerHTML=errors.join('<br>');}else errEl.style.display='none';
+  const wrap=document.getElementById('adv-import-preview-wrap');
+  if(parsedAdvanceRows.length){
+    wrap.style.display='block';
+    document.getElementById('adv-import-preview-body').innerHTML=parsedAdvanceRows.map(r=>`
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:5px 8px">${fmtDate(r.effective_from)}</td>
+        <td style="padding:5px 8px">${typeLabels[r.type]}</td>
+        <td style="padding:5px 8px">${fmtE(r.monthly_amount)}</td>
+        <td style="padding:5px 8px;color:var(--success);font-size:11px">добавить</td>
+      </tr>`).join('');
+  } else wrap.style.display='none';
+  const btn=document.getElementById('do-adv-import-btn');
+  btn.disabled=!parsedAdvanceRows.length;
+  btn.textContent=parsedAdvanceRows.length?`Загрузить ${parsedAdvanceRows.length}`:'Загрузить';
+}
+
+async function doAdvanceImport() {
+  if(!parsedAdvanceRows.length)return;
+  const btn=document.getElementById('do-adv-import-btn');
+  btn.disabled=true;btn.textContent='Загружаю…';
+  try{
+    const{data,error}=await sb.from('advances').insert(parsedAdvanceRows).select();
+    if(error)throw error;
+    advances.push(...data);closeAdvanceImportModal();renderBudgetPage();
+    toast(`Загружено ${data.length} авансов`,'ok');
+  }catch(e){
+    toast('Ошибка: '+e.message,'err');btn.disabled=false;
+    btn.textContent=`Загрузить ${parsedAdvanceRows.length}`;
+  }
+}
+
+// ── Advance Modal ──────────────────────────────────────────────
+function openAdvanceModal(id) {
+  editingAdvanceId = id || null;
+  const modal = document.getElementById('advance-modal');
+  modal.classList.add('open');
+  document.querySelector('#advance-modal .modal-title').textContent = id ? 'Редактировать аванс' : 'Новый аванс';
+  document.getElementById('adv-date').value   = new Date().toISOString().slice(0, 10);
+  document.getElementById('adv-type').value   = 'electricity';
+  document.getElementById('adv-amount').value = '';
+  if (id) {
+    const a = advances.find(x => x.id === id);
+    if (a) {
+      document.getElementById('adv-date').value   = a.effective_from;
+      document.getElementById('adv-type').value   = a.type;
+      document.getElementById('adv-amount').value = a.monthly_amount;
+    }
+  }
+}
+
+function closeAdvanceModal() {
+  document.getElementById('advance-modal').classList.remove('open');
+  editingAdvanceId = null;
+}
+
+async function saveAdvance() {
+  const date   = document.getElementById('adv-date').value;
+  const type   = document.getElementById('adv-type').value;
+  const amount = parseFloat(document.getElementById('adv-amount').value);
+  if (!date || !type || isNaN(amount) || amount <= 0) { toast('Заполните все поля','err'); return; }
+  const btn = document.getElementById('save-adv-btn');
+  btn.disabled = true;
+  try {
+    const row = { effective_from: date, type, monthly_amount: amount };
+    if (editingAdvanceId) {
+      const { data, error } = await sb.from('advances').update(row).eq('id', editingAdvanceId).select().single();
+      if (error) throw error;
+      const idx = advances.findIndex(a => a.id === editingAdvanceId);
+      if (idx >= 0) advances[idx] = data;
+    } else {
+      const { data, error } = await sb.from('advances').insert(row).select().single();
+      if (error) throw error;
+      advances.push(data);
+    }
+    closeAdvanceModal();
+    renderBudgetPage();
+  } catch(e) { toast('Ошибка: '+e.message,'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteAdvance(id) {
+  if (!confirm('Удалить эту запись аванса?')) return;
+  const { error } = await sb.from('advances').delete().eq('id', id);
+  if (error) { toast('Ошибка: '+error.message,'err'); return; }
+  advances = advances.filter(a => a.id !== id);
+  renderBudgetPage();
+}
+
+// ── Settlement Modal ───────────────────────────────────────────
+function _settVal(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
+function _settSet(id, v) { const el=document.getElementById(id); if(el) el.value = v!=null&&!isNaN(v) ? v : ''; }
+
+// Auto-calculate totals when any field changes
+function onSettCalc() {
+  const hFixed = _settVal('sett-heat-fixed');
+  const hVar   = _settVal('sett-heat-var');
+  const wFixed = _settVal('sett-water-fixed');
+  const wVar   = _settVal('sett-water-var');
+
+  // Update total fields if we have both components
+  if (hFixed || hVar) { const sum=+(hFixed+hVar).toFixed(2); _settSet('sett-heat', sum); }
+  if (wFixed || wVar) { const sum=+(wFixed+wVar).toFixed(2); _settSet('sett-water', sum); }
+
+  const total = _settVal('sett-total');
+  const water = _settVal('sett-water');
+  const heat  = _settVal('sett-heat');
+  const other = total>0 && water>0 && heat>0 ? +(total-water-heat).toFixed(2) : null;
+
+  const otherEl = document.getElementById('sett-other-display');
+  const pctEl   = document.getElementById('sett-pct-display');
+  const hintEl  = document.getElementById('sett-calc-hint');
+  if (otherEl) otherEl.textContent = other!=null ? fmtE(other) : '—';
+  if (pctEl && total>0) {
+    const wp=water/total*100, hp=heat/total*100, op=other!=null?other/total*100:null;
+    pctEl.textContent = `Вода ${fmtN(wp,0)}% · Отопл. ${fmtN(hp,0)}%${op!=null?' · Прочее '+fmtN(op,0)+'%':''}`;
+  }
+  // Show app-calculated hint for reference
+  if (hintEl) {
+    const yr = parseInt(document.getElementById('sett-year')?.value);
+    if (yr && document.getElementById('sett-type')?.value === 'kommunalka') {
+      const f = `${yr}-01-01`, t = `${yr}-12-31`;
+      const calcW = sumCostBetween('water',   f, t);
+      const calcH = sumCostBetween('heating', f, t);
+      if (calcW>0 || calcH>0) {
+        hintEl.style.display='block';
+        hintEl.textContent = `Приложение рассчитало за ${yr}: вода ≈${fmtE(calcW)}, отопление ≈${fmtE(calcH)}`;
+      } else hintEl.style.display='none';
+    } else hintEl.style.display='none';
+  }
+}
+
+function onSettTotalChange() { onSettCalc(); }
+function onSettYearChange()  { onSettCalc(); }
+
+function openSettlementModal(id) {
+  editingSettlementId = id || null;
+  document.getElementById('settlement-modal').classList.add('open');
+  document.querySelector('#settlement-modal .modal-title').textContent = id ? 'Редактировать расчёт' : 'Годовой расчёт';
+  // Clear all
+  ['sett-year','sett-total','sett-grundsteuer','sett-heat-fixed','sett-heat-var','sett-heat',
+   'sett-water-fixed','sett-water-var','sett-water','sett-correction']
+    .forEach(i=>{ const el=document.getElementById(i); if(el) el.value=''; });
+  document.getElementById('sett-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('sett-type').value = 'kommunalka';
+  const otherEl = document.getElementById('sett-other-display');
+  if(otherEl) otherEl.textContent='—';
+  updateSettlementFields();
+
+  if (id) {
+    const s = settlements.find(x => x.id === id);
+    if (s) {
+      _settSet('sett-year',        s.period_year);
+      _settSet('sett-total',       s.actual_total);
+      _settSet('sett-grundsteuer', s.grundsteuer);
+      _settSet('sett-heat-fixed',  s.heating_fixed);
+      _settSet('sett-heat-var',    s.heating_variable);
+      _settSet('sett-heat',        s.heating_portion);
+      _settSet('sett-water-fixed', s.water_fixed);
+      _settSet('sett-water-var',   s.water_variable);
+      _settSet('sett-water',       s.water_portion);
+      _settSet('sett-correction',  s.correction);
+      document.getElementById('sett-date').value = s.settlement_date;
+      document.getElementById('sett-type').value = s.type;
+      updateSettlementFields();
+      onSettCalc();
+    }
+  }
+}
+
+function closeSettlementModal() {
+  document.getElementById('settlement-modal').classList.remove('open');
+  editingSettlementId = null;
+}
+
+function updateSettlementFields() {
+  const isKomm = document.getElementById('sett-type').value === 'kommunalka';
+  document.getElementById('sett-komm-fields').style.display = isKomm ? 'block' : 'none';
+  const gsWrap = document.getElementById('sett-grundsteuer-wrap');
+  if (gsWrap) gsWrap.style.display = isKomm ? '' : 'none';
+  if (isKomm) onSettCalc();
+}
+
+async function saveSettlement() {
+  const year   = parseInt(document.getElementById('sett-year').value);
+  const date   = document.getElementById('sett-date').value;
+  const type   = document.getElementById('sett-type').value;
+  const total  = parseFloat(document.getElementById('sett-total').value);
+  const corr   = parseFloat(document.getElementById('sett-correction').value) || 0;
+  if (!year || !date || !type || isNaN(total)) { toast('Заполните год, дату и итого','err'); return; }
+
+  let water_portion=null, heating_portion=null, other_portion=null;
+  let water_fixed=null, water_variable=null, heating_fixed=null, heating_variable=null;
+  if (type === 'kommunalka') {
+    const wf=_settVal('sett-water-fixed')||null, wv=_settVal('sett-water-var')||null;
+    const hf=_settVal('sett-heat-fixed') ||null, hv=_settVal('sett-heat-var')  ||null;
+    water_fixed=wf; water_variable=wv;
+    heating_fixed=hf; heating_variable=hv;
+    // Use explicit total field, or sum of components
+    const w=_settVal('sett-water'), h=_settVal('sett-heat');
+    water_portion    = w>0 ? w : (wf&&wv ? +(wf+wv).toFixed(2) : null);
+    heating_portion  = h>0 ? h : (hf&&hv ? +(hf+hv).toFixed(2) : null);
+    if (water_portion && heating_portion) other_portion = +(total-water_portion-heating_portion).toFixed(2);
+  }
+
+  const grundsteuer = type === 'kommunalka' ? (parseFloat(document.getElementById('sett-grundsteuer')?.value) || null) : null;
+
+  const btn = document.getElementById('save-sett-btn');
+  btn.disabled = true;
+  try {
+    const row = { period_year: year, settlement_date: date, type, actual_total: total,
+                  water_portion, heating_portion, other_portion, grundsteuer,
+                  water_fixed, water_variable, heating_fixed, heating_variable,
+                  correction: corr };
+    if (editingSettlementId) {
+      const { data, error } = await sb.from('settlements').update(row).eq('id', editingSettlementId).select().single();
+      if (error) throw error;
+      const idx = settlements.findIndex(s => s.id === editingSettlementId);
+      if (idx >= 0) settlements[idx] = data;
+    } else {
+      const { data, error } = await sb.from('settlements').insert(row).select().single();
+      if (error) throw error;
+      settlements.push(data);
+    }
+    closeSettlementModal();
+    renderBudgetPage();
+  } catch(e) { toast('Ошибка: '+e.message,'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteSettlement(id) {
+  if (!confirm('Удалить эту запись расчёта?')) return;
+  const { error } = await sb.from('settlements').delete().eq('id', id);
+  if (error) { toast('Ошибка: '+error.message,'err'); return; }
+  settlements = settlements.filter(s => s.id !== id);
+  renderBudgetPage();
+}
+
+// ─── MODAL CLOSE ON BACKDROP ──────────────────────────────────
+document.getElementById('tariff-modal').addEventListener('click',function(e){if(e.target===this)closeTariffModal()});
+document.getElementById('reading-modal').addEventListener('click',function(e){if(e.target===this)closeReadingModal()});
+document.getElementById('import-modal').addEventListener('click',function(e){if(e.target===this)closeImportModal()});
+document.getElementById('tariff-import-modal').addEventListener('click',function(e){if(e.target===this)closeTariffImportModal()});
+document.getElementById('advance-modal').addEventListener('click',function(e){if(e.target===this)closeAdvanceModal()});
+document.getElementById('settlement-modal').addEventListener('click',function(e){if(e.target===this)closeSettlementModal()});
+document.getElementById('advance-import-modal').addEventListener('click',function(e){if(e.target===this)closeAdvanceImportModal()});
+
+// ─── START ────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
