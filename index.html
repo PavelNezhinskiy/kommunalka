@@ -973,9 +973,23 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
 
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:13px">
         <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-bottom:8px">АККАУНТ</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
           <span id="s-user-email" style="font-size:13.5px;word-break:break-all">—</span>
           <button class="btn btn-secondary btn-sm" onclick="signOut()">Выйти</button>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:11px">
+          <label for="s-newpass" style="font-size:12px;color:var(--muted);font-weight:550;display:block;margin-bottom:5px">
+            Новый пароль
+          </label>
+          <div style="display:flex;gap:7px;flex-wrap:wrap">
+            <input type="password" id="s-newpass" autocomplete="new-password" placeholder="минимум 8 символов"
+                   style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);padding:11px 12px;font-size:16px;min-height:44px">
+            <button class="btn btn-secondary btn-sm" id="setpass-btn" onclick="setPassword()">Сохранить</button>
+          </div>
+          <div class="hint" id="s-pass-hint" style="margin-top:6px">
+            Если вы входили по ссылке из письма, пароль ещё не задан — задайте его здесь.
+          </div>
         </div>
       </div>
 
@@ -1222,6 +1236,31 @@ async function signIn() {
   document.getElementById('auth-screen').classList.remove('show');
   document.getElementById('loader').style.display = 'flex';
   await init();
+}
+
+// Задать или сменить пароль. Нужно тем, кто вошёл по ссылке-приглашению:
+// у такой учётки пароля нет, и после истечения сессии войти будет нечем.
+async function setPassword() {
+  const el   = document.getElementById('s-newpass');
+  const hint = document.getElementById('s-pass-hint');
+  const btn  = document.getElementById('setpass-btn');
+  const pass = el.value;
+
+  if (pass.length < 8) {
+    hint.innerHTML = '<span style="color:#fca5a5">Пароль должен быть не короче 8 символов</span>';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Сохраняю…';
+  const { error } = await sb.auth.updateUser({ password: pass });
+  btn.disabled = false; btn.textContent = 'Сохранить';
+
+  if (error) {
+    hint.innerHTML = `<span style="color:#fca5a5">${error.message}</span>`;
+    return;
+  }
+  el.value = '';
+  hint.innerHTML = '<span style="color:var(--success)">Пароль сохранён — теперь можно входить по email и паролю</span>';
+  toast('Пароль сохранён', 'ok');
 }
 
 async function signOut() {
