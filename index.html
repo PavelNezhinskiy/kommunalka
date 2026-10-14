@@ -982,11 +982,15 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:13px">
         <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-bottom:8px">РЕЗЕРВНАЯ КОПИЯ</div>
         <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">
-          Скачивает все показания, тарифы, авансы и расчёты одним JSON-файлом.
-          Делайте это хотя бы раз в пару месяцев.
+          Копия в Google Sheets уходит автоматически раз в неделю при открытии приложения.
+          Кнопками можно отправить или скачать прямо сейчас.
         </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px" id="backup-status"></div>
+        <button class="btn btn-secondary btn-block btn-sm" id="gbackup-btn" style="margin-bottom:7px" onclick="backupToSheets()">
+          ☁ Отправить копию в Google Sheets
+        </button>
         <button class="btn btn-secondary btn-block btn-sm" id="backup-btn" onclick="exportBackup()">
-          ⬇ Скачать резервную копию
+          ⬇ Скачать файлом на устройство
         </button>
       </div>
 
@@ -1024,7 +1028,7 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
         sh.appendRow(['Изменено','С даты','Тип','Фикс. плата (€/год)','Цена за ед. (€)','Действие']);
         sh.getRange(1,1,1,6).setFontWeight('bold').setBackground('#fef3c7');
       }
-      arr.forEach(r => sh.appendRow([new Date(), r.effective_from, r.type, r.fixed_cost, r.rate, r.action||'']));
+      arr.forEach(r =&gt; sh.appendRow([new Date(), r.effective_from, r.type, r.fixed_cost, r.rate, r.action||'']));
     } else {
       let sh = ss.getSheetByName('Из приложения');
       if (!sh) {
@@ -1032,12 +1036,53 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
         sh.appendRow(['Внесено','Дата','Тип','Комната','Показание','Δ потр.','Стоимость €']);
         sh.getRange(1,1,1,7).setFontWeight('bold').setBackground('#e8f0fe');
       }
-      arr.forEach(r => sh.appendRow([new Date(), r.date, r.type, r.room||'', r.value, r.delta||'', r.cost||'']));
+      arr.forEach(r =&gt; sh.appendRow([new Date(), r.date, r.type, r.room||'', r.value, r.delta||'', r.cost||'']));
     }
-    return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT);
+    return out('ok');
   } catch(err) {
-    return ContentService.createTextOutput('err:'+err.message).setMimeType(ContentService.MimeType.TEXT);
+    return out('err:' + err.message);
   }
+}
+
+// Полная резервная копия базы — вызывается приложением
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+    if (body.kind !== 'backup') return out('err:unknown kind');
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let tables = 0, total = 0;
+
+    Object.keys(body.tables).forEach(function(name) {
+      const rows = body.tables[name];
+      if (!rows || !rows.length) return;
+      const title = 'Копия · ' + name;
+      let sh = ss.getSheetByName(title) || ss.insertSheet(title);
+      sh.clear();
+      const cols = Object.keys(rows[0]);
+      const data = [cols].concat(rows.map(function(r) {
+        return cols.map(function(c) { return r[c] === null ? '' : String(r[c]); });
+      }));
+      sh.getRange(1, 1, data.length, cols.length).setValues(data);
+      sh.getRange(1, 1, 1, cols.length).setFontWeight('bold').setBackground('#dcfce7');
+      sh.setFrozenRows(1);
+      tables++; total += rows.length;
+    });
+
+    let log = ss.getSheetByName('Копии · журнал');
+    if (!log) {
+      log = ss.insertSheet('Копии · журнал');
+      log.appendRow(['Когда','Таблиц','Строк всего']);
+      log.getRange(1,1,1,3).setFontWeight('bold').setBackground('#dcfce7');
+    }
+    log.appendRow([new Date(), tables, total]);
+    return out('ok:' + total);
+  } catch(err) {
+    return out('err:' + err.message);
+  }
+}
+
+function out(s) {
+  return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.TEXT);
 }</div>
         <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="copyScriptCode()">📋 Скопировать код</button>
       </div>
@@ -1206,6 +1251,7 @@ async function init() {
     // ярлык с рабочего стола: /?p=readings
     const p = new URLSearchParams(location.search).get('p');
     if (p && document.getElementById('page-'+p)) showPage(p);
+    autoBackup();   // раз в неделю, молча, не блокирует загрузку
   } catch(e) {
     if (isAuthError(e)) {           // сессия истекла или доступ закрыт
       await sb.auth.signOut().catch(()=>{});
@@ -1510,14 +1556,23 @@ function filterMonths(monthsObj, monthsBack) {
   return keys;
 }
 
+// Границы месяца для пропорции фиксированной платы.
+// Конец — первое число СЛЕДУЮЩЕГО месяца: daysBetween считает разность дат,
+// поэтому с последним числом месяца терялся один день (в октябре 30 вместо 31).
+function monthBounds(y, m) {          // m — 1..12
+  const start = `${y}-${String(m).padStart(2,'0')}-01`;
+  const ny = m === 12 ? y+1 : y;
+  const nm = m === 12 ? 1 : m+1;
+  const end = `${ny}-${String(nm).padStart(2,'0')}-01`;
+  return { start, end, days: new Date(y, m, 0).getDate() };
+}
+
 function addFixedToMonthly(monthsObj, tariffType) {
   // Add prorated fixed cost to each month in the object
   for(const key of Object.keys(monthsObj)){
     const [y,m] = key.split('-').map(Number);
-    const d1 = `${y}-${String(m).padStart(2,'0')}-01`;
-    const d2m = new Date(y, m, 0);
-    const d2 = `${y}-${String(m).padStart(2,'0')}-${String(d2m.getDate()).padStart(2,'0')}`;
-    monthsObj[key].fixed = calcFixedProrated(tariffType, d1, d2);
+    const { start, end } = monthBounds(y, m);
+    monthsObj[key].fixed = calcFixedProrated(tariffType, start, end);
     monthsObj[key].total = (monthsObj[key].cost||0) + monthsObj[key].fixed;
   }
   return monthsObj;
@@ -1641,9 +1696,9 @@ function renderDashboard() {
   const hData  = heatM[key]||{cons:0,cost:0,fixed:0,total:0};
 
   // Calc monthly fixed contributions
-  const d1m = key+'-01';
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth()+1,0).getDate();
-  const d2m = `${key}-${String(daysInMonth).padStart(2,'0')}`;
+  const mb = monthBounds(now.getFullYear(), now.getMonth()+1);
+  const d1m = mb.start, d2m = mb.end;
+  const daysInMonth = mb.days;
   const eFixed = calcFixedProrated('electricity',d1m,d2m);
   const wFixed = calcFixedProrated('water',d1m,d2m);
   const hFixed = calcFixedProrated('heating',d1m,d2m);
@@ -1653,22 +1708,30 @@ function renderDashboard() {
   const hTotalCost = (hData.cost||0) + hFixed;
   const grandTotal = eTotalCost + wTotalCost + hTotalCost;
 
+  // подпись «из них X фикс.» — иначе непонятно, откуда стоимость при нулевом потреблении
+  const fixedNote = (fixed, total) => fixed > 0
+    ? `<div style="font-size:10.5px;color:var(--muted);margin-top:2px">из них ${fmtE(fixed)} фикс. плата</div>`
+    : '';
+
   let gridHtml = '';
   if(eData.cons>0||eFixed>0) gridHtml += `<div class="month-item">
     <div class="val">${fmtN(eData.cons,0)} <span style="font-size:11px;color:var(--muted)">кВт·ч</span></div>
     <div class="lbl">${TYPES.electricity.label}</div>
     <div class="sub">${fmtE(eTotalCost)}</div>
+    ${fixedNote(eFixed, eTotalCost)}
   </div>`;
   const wCons = (bData.cons||0)+(kData.cons||0);
   if(wCons>0||wFixed>0) gridHtml += `<div class="month-item">
     <div class="val">${fmtN(wCons,2)} <span style="font-size:11px;color:var(--muted)">м³</span></div>
     <div class="lbl">💧 Вода</div>
     <div class="sub">${fmtE(wTotalCost)}</div>
+    ${fixedNote(wFixed, wTotalCost)}
   </div>`;
   if(hData.cons>0||hFixed>0) gridHtml += `<div class="month-item">
     <div class="val">${fmtN(hData.cons,1)} <span style="font-size:11px;color:var(--muted)">взв.ед</span></div>
     <div class="lbl">🌡️ Отопление</div>
     <div class="sub">${fmtE(hTotalCost)}</div>
+    ${fixedNote(hFixed, hTotalCost)}
   </div>`;
   if(grandTotal>0) gridHtml += `<div class="month-total">
     <div class="val">${fmtE(grandTotal)}</div>
@@ -1680,6 +1743,7 @@ function renderDashboard() {
   renderHero({
     month: `${mn[now.getMonth()]} ${now.getFullYear()}`,
     total: grandTotal,
+    fixed: eFixed + wFixed + hFixed,
     parts: [
       {label:'Свет',      value:eTotalCost, color:'var(--elec)'},
       {label:'Вода',      value:wTotalCost, color:'var(--bath)'},
@@ -1709,11 +1773,14 @@ function renderDashboard() {
 }
 
 // ─── HERO + НАПОМИНАНИЕ ───────────────────────────────────────
-function renderHero({month, total, parts, daysPassed, daysInMonth}) {
+function renderHero({month, total, fixed = 0, parts, daysPassed, daysInMonth}) {
   const el = document.getElementById('hero');
   if(!el) return;
   const sum = parts.reduce((a,p)=>a+(p.value||0),0);
-  const proj = daysPassed>0 ? total/daysPassed*daysInMonth : 0;
+  // Фиксированные платы уже посчитаны за ВЕСЬ месяц — масштабировать
+  // по прошедшим дням нужно только потребление, иначе прогноз завышается.
+  const variable = Math.max(0, total - fixed);
+  const proj = daysPassed>0 ? fixed + variable/daysPassed*daysInMonth : 0;
   const bar = sum>0 ? parts.map(p=>
     `<span style="width:${(p.value/sum*100).toFixed(1)}%;background:${p.color}"></span>`).join('') : '';
   const legend = parts.filter(p=>p.value>0).map(p=>
@@ -1724,7 +1791,12 @@ function renderHero({month, total, parts, daysPassed, daysInMonth}) {
       <div class="hero-label">${daysPassed} из ${daysInMonth} дн.</div>
     </div>
     <div class="hero-value">${total>0?fmtE(total):'—'}</div>
-    <div class="hero-sub">${proj>0?`Прогноз на месяц ≈ <b style="color:var(--text2)">${fmtE(proj)}</b>`:'Нет данных за этот месяц'}</div>
+    <div class="hero-sub">${
+      total>0
+        ? `${fmtE(fixed)} фикс. плата + ${fmtE(variable)} потребление`
+          + (proj>0 ? `<br>Прогноз на месяц ≈ <b style="color:var(--text2)">${fmtE(proj)}</b>` : '')
+        : 'Нет данных за этот месяц'
+    }</div>
     ${bar?`<div class="hero-bar">${bar}</div><div class="hero-legend">${legend}</div>`:''}`;
 }
 
@@ -2103,29 +2175,88 @@ function openSettings() {
     const el = document.getElementById('s-user-email');
     if (el) el.textContent = data?.user?.email || '—';
   }).catch(()=>{});
+  renderBackupStatus();
   document.getElementById('settings-modal').classList.add('open');
 }
 
 // ─── РЕЗЕРВНАЯ КОПИЯ ──────────────────────────────────────────
+const BACKUP_TABLES = ['readings','tariffs','advances','settlements','settings','expenses'];
+const BACKUP_EVERY_DAYS = 7;
+
+async function fetchAllTables() {
+  const out = {};
+  for (const t of BACKUP_TABLES) {
+    const { data, error } = await sb.from(t).select('*');
+    if (error) {
+      if (error.code === '42P01') continue;        // таблицы нет — пропускаем
+      throw new Error(`${t}: ${error.message}`);
+    }
+    out[t] = data || [];
+  }
+  return out;
+}
+
+// Копия в Google Sheets через Apps Script. Ответ прочитать нельзя
+// (no-cors), поэтому подтверждаем только отправку.
+async function backupToSheets(silent) {
+  const url = localStorage.getItem('gsheetsUrl');
+  if (!url) {
+    if (!silent) toast('Сначала укажите URL Google-скрипта в настройках', 'err');
+    return;
+  }
+  const btn = document.getElementById('gbackup-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Отправляю…'; }
+  try {
+    const tables = await fetchAllTables();
+    const total = Object.values(tables).reduce((a, v) => a + v.length, 0);
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ kind: 'backup', tables }),
+    });
+    localStorage.setItem('lastSheetsBackup', new Date().toISOString());
+    renderBackupStatus();
+    if (!silent) toast(`Отправлено в Google Sheets · ${total} строк`, 'ok');
+  } catch (e) {
+    if (!silent) toast('Не удалось отправить: ' + e.message, 'err');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '☁ Отправить копию в Google Sheets'; }
+}
+
+// Раз в неделю при открытии приложения — молча
+async function autoBackup() {
+  if (!localStorage.getItem('gsheetsUrl')) return;
+  const last = localStorage.getItem('lastSheetsBackup');
+  if (last) {
+    const days = (Date.now() - new Date(last)) / 86400000;
+    if (days < BACKUP_EVERY_DAYS) return;
+  }
+  await backupToSheets(true);
+}
+
+function renderBackupStatus() {
+  const el = document.getElementById('backup-status');
+  if (!el) return;
+  const last = localStorage.getItem('lastSheetsBackup');
+  if (!localStorage.getItem('gsheetsUrl')) {
+    el.innerHTML = '<span style="color:#fbbf24">Google-скрипт не настроен — копии не уходят</span>';
+    return;
+  }
+  if (!last) { el.textContent = 'Копия в Google ещё не отправлялась'; return; }
+  const days = Math.floor((Date.now() - new Date(last)) / 86400000);
+  el.textContent = `Последняя копия в Google: ${fmtDate(last.split('T')[0])}`
+    + (days > 0 ? ` · ${days} дн. назад` : ' · сегодня');
+}
+
 // Выгружает всё из базы в JSON-файл на устройство.
 async function exportBackup() {
   const btn = document.getElementById('backup-btn');
   btn.disabled = true; btn.textContent = 'Собираю…';
   try {
-    const tables = ['readings','tariffs','advances','settlements','settings','expenses'];
-    const dump = { app:'kommunalka', exported_at:new Date().toISOString(), tables:{} };
-
-    for (const t of tables) {
-      const { data, error } = await sb.from(t).select('*');
-      if (error) {
-        if (error.code === '42P01') { dump.tables[t] = null; continue; } // таблицы нет — не беда
-        throw new Error(`${t}: ${error.message}`);
-      }
-      dump.tables[t] = data || [];
-    }
+    const dump = { app:'kommunalka', exported_at:new Date().toISOString(), tables: await fetchAllTables() };
 
     const counts = Object.entries(dump.tables)
-      .filter(([,v]) => v)
       .map(([k,v]) => `${k} ${v.length}`).join(' · ');
 
     const blob = new Blob([JSON.stringify(dump, null, 1)], {type:'application/json'});
