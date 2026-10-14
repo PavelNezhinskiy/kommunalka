@@ -8,8 +8,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#101319",
-  "theme_color": "#101319",
+  "background_color": "#101418",
+  "theme_color": "#101418",
   "categories": [
     "utilities",
     "finance"
@@ -36,9 +36,9 @@
   ],
   "shortcuts": [
     {
-      "name": "Внести показание",
+      "name": "Снять показания",
       "short_name": "Показание",
-      "url": "/?p=readings",
+      "url": "/?p=entry",
       "icons": [
         {
           "src": "/icon-192.png",

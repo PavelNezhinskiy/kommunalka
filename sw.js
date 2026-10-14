@@ -1,9 +1,15 @@
 // Коммуналка — service worker
 // Оболочка приложения кэшируется, данные (Supabase) всегда идут из сети.
-const VERSION = 'kom-v2';
+const VERSION = 'kom-v3';
 const SHELL = [
   '/',
   '/index.html',
+  '/styles.css',
+  '/app.js',
+  '/forecast.js',
+  '/ui.js',
+  '/screens.js',
+  '/entry.js',
   '/manifest.webmanifest',
   '/icon-192.png',
   '/icon-512.png',
@@ -49,7 +55,20 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Остальное (иконки, CDN-библиотеки): кэш, затем сеть
+  // Свои файлы (скрипты, стили): сначала сеть — обновления видны сразу, офлайн берём из кэша
+  if (url.origin === location.origin && !/\.(png|ico|svg)$/.test(url.pathname)) {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.status === 200) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // Иконки и CDN-библиотеки: кэш, затем сеть
   e.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
       if (res && (res.status === 200 || res.type === 'opaque')) {
