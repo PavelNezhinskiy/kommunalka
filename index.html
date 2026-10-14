@@ -1025,12 +1025,20 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
         <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:9px">
           1. Откройте таблицу → <strong style="color:var(--text)">Расширения → Apps Script</strong><br>
           2. Удалите весь код, вставьте код ниже → сохраните (Ctrl+S)<br>
-          3. Нажмите <strong style="color:var(--text)">«Развернуть» → «Новое развёртывание»</strong><br>
-          4. Тип: <em>Веб-приложение</em> · Доступ: <em>Все (в т.ч. анонимные)</em><br>
-          5. Скопируйте URL и вставьте в поле выше
+          3. <strong style="color:var(--text)">Если скрипт уже разворачивался:</strong> «Начать развертывание» →
+             <em>Управление развертываниями</em> → карандаш → Версия: <em>Новая версия</em> → Развернуть.
+             URL не изменится.<br>
+          4. <strong style="color:var(--text)">Если впервые:</strong> «Начать развертывание» → <em>Новое развертывание</em> →
+             тип <em>Веб-приложение</em> · Доступ: <em>Все</em> → скопировать URL в поле выше<br>
+          5. Проверка: откройте URL скрипта с <code style="color:#a5b4fc">?ping=1</code> на конце —
+             должно ответить <strong style="color:var(--success)">v2</strong>. Если пусто или ошибка —
+             развёрнута старая версия
         </div>
         <div class="code-block">function doGet(e) {
   try {
+    // проверка версии: откройте URL скрипта с ?ping=1 — должно ответить v2
+    if (e &amp;&amp; e.parameter &amp;&amp; e.parameter.ping) return out('v2');
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const rows = JSON.parse(decodeURIComponent(e.parameter.data || '[]'));
     const arr = Array.isArray(rows) ? rows : [rows];
