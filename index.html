@@ -1014,8 +1014,16 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
           <span id="sync-status"></span>
         </label>
         <input type="url" id="s-gsheets-url" placeholder="https://script.google.com/macros/s/.../exec"
-          style="font-size:12px">
-        <div class="hint">Каждое сохранённое показание будет записываться на лист «Из приложения»</div>
+          style="font-size:13px" oninput="document.getElementById('script-check').innerHTML=''">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:7px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" id="check-script-btn" onclick="checkScript()">
+            Проверить скрипт
+          </button>
+          <span id="script-check" style="font-size:12px"></span>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          Каждое показание пишется на лист «Из приложения», полная копия — на листы «Копия · …»
+        </div>
       </div>
 
       <div>
@@ -2226,6 +2234,46 @@ function openSettings() {
   document.getElementById('settings-modal').classList.add('open');
 }
 
+// ─── ПРОВЕРКА РАЗВЁРНУТОГО СКРИПТА ────────────────────────────
+// Apps Script обслуживает зафиксированную версию: сохранение кода в
+// редакторе её не меняет. GET-ответ прочитать можно (в отличие от POST),
+// поэтому версию проверяем через ?ping=1.
+const SCRIPT_VERSION = 'v2';
+
+async function pingScript(url) {
+  if (!url) return { state:'empty' };
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec/.test(url)) {
+    return { state:'badurl' };
+  }
+  try {
+    const res  = await fetch(url + (url.includes('?') ? '&' : '?') + 'ping=1', { redirect:'follow' });
+    const text = (await res.text()).trim();
+    if (text === SCRIPT_VERSION) return { state:'ok', text };
+    return { state:'old', text: text.slice(0, 60) };
+  } catch (e) {
+    return { state:'unreachable', text: e.message };   // CORS или нет сети
+  }
+}
+
+async function checkScript() {
+  const url  = document.getElementById('s-gsheets-url').value.trim();
+  const out  = document.getElementById('script-check');
+  const btn  = document.getElementById('check-script-btn');
+  btn.disabled = true; out.innerHTML = '<span style="color:var(--muted)">Проверяю…</span>';
+  const r = await pingScript(url);
+  btn.disabled = false;
+
+  const msg = {
+    empty:       ['var(--muted)',  'Укажите URL скрипта'],
+    badurl:      ['#fca5a5',       'Не похоже на адрес Apps Script — нужен …/macros/s/…/exec'],
+    ok:          ['var(--success)',`Развёрнута актуальная версия (${SCRIPT_VERSION})`],
+    old:         ['#fbbf24',       'Отвечает старая версия — разверните новую (Управление развертываниями → Версия: Новая)'],
+    unreachable: ['var(--muted)',  'Ответ прочитать не удалось — проверьте вручную, открыв URL с ?ping=1'],
+  }[r.state];
+  out.innerHTML = `<span style="color:${msg[0]}">${msg[1]}</span>`;
+  return r;
+}
+
 // ─── РЕЗЕРВНАЯ КОПИЯ ──────────────────────────────────────────
 const BACKUP_TABLES = ['readings','tariffs','advances','settlements','settings','expenses'];
 const BACKUP_EVERY_DAYS = 7;
@@ -2252,8 +2300,20 @@ async function backupToSheets(silent) {
     return;
   }
   const btn = document.getElementById('gbackup-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Отправляю…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Проверяю скрипт…'; }
   try {
+    // сначала убеждаемся, что по адресу живёт нужная версия —
+    // иначе POST уйдёт в никуда, а мы отрапортуем об успехе
+    const ping = await pingScript(url);
+    if (ping.state === 'old' || ping.state === 'badurl') {
+      if (btn) { btn.disabled = false; btn.textContent = '☁ Отправить копию в Google Sheets'; }
+      if (!silent) toast(ping.state === 'old'
+        ? 'По этому адресу старая версия скрипта — разверните новую'
+        : 'Адрес не похож на Apps Script', 'err');
+      return;
+    }
+
+    if (btn) btn.textContent = 'Отправляю…';
     const tables = await fetchAllTables();
     const total = Object.values(tables).reduce((a, v) => a + v.length, 0);
     await fetch(url, {
@@ -2264,7 +2324,9 @@ async function backupToSheets(silent) {
     });
     localStorage.setItem('lastSheetsBackup', new Date().toISOString());
     renderBackupStatus();
-    if (!silent) toast(`Отправлено в Google Sheets · ${total} строк`, 'ok');
+    if (!silent) toast(ping.state === 'ok'
+      ? `Отправлено в Google Sheets · ${total} строк`
+      : `Отправлено · ${total} строк (ответ скрипта прочитать нельзя — проверьте таблицу)`, 'ok');
   } catch (e) {
     if (!silent) toast('Не удалось отправить: ' + e.message, 'err');
   }
