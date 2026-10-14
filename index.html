@@ -579,7 +579,9 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
   <div id="view-monthly">
     <div class="chart-card"><div class="chart-title">⚡ Электричество (кВт·ч / месяц)</div><div class="chart-wrap"><canvas id="chart-elec"></canvas></div></div>
     <div class="chart-card"><div class="chart-title">💧 Вода (м³ / месяц)</div><div class="chart-wrap"><canvas id="chart-water"></canvas></div></div>
-    <div class="chart-card"><div class="chart-title">🌡️ Отопление (взв.ед / месяц)</div><div class="chart-wrap"><canvas id="chart-heat"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">🌡️ Отопление по комнатам (взв.ед / месяц)</div><div class="chart-wrap"><canvas id="chart-heat"></canvas></div></div>
+    <div id="heat-rooms-breakdown"></div>
+    <div id="data-issues"></div>
     <div class="chart-card"><div class="chart-title">💰 Расходы (€ / месяц)</div><div class="chart-wrap"><canvas id="chart-cost"></canvas></div></div>
   </div>
 
@@ -1173,6 +1175,10 @@ const TYPES = {
 };
 const HEATING_TYPES = ['heating_bathroom','heating_kitchen','heating_bedroom','heating_kids','heating_living'];
 const HEAT_IDS     = ['h-bath','h-kitchen','h-bedroom','h-kids','h-living'];
+const ROOM_COLORS  = {
+  heating_bathroom:'#60a5fa', heating_kitchen:'#34d399', heating_bedroom:'#a78bfa',
+  heating_kids:'#fbbf24',     heating_living:'#f87171',
+};
 const TARIFF_UNITS = {electricity:'кВт·ч', water:'м³', heating:'взв.ед'};
 
 // ─── STATE ────────────────────────────────────────────────────
@@ -2060,6 +2066,11 @@ async function addReading() {
     if(last&&value<last.value){
       is_reset = confirm(`Показание ${value} меньше предыдущего ${last.value}.\nЭто замена счётчика?`);
     }
+    // две записи за одну дату — период между ними выпадает из расчётов
+    if(readings.some(r=>r.type===selType && r.date===date)){
+      if(!confirm(`За ${fmtDate(date)} уже есть показание по этому счётчику.\n`
+        + `Две записи за одну дату — расход между ними не посчитается.\n\nВсё равно сохранить?`)) return;
+    }
     btn.disabled=true; btn.textContent='Сохраняю…';
     const {data,error} = await sb.from('readings').insert({date,type:selType,value,is_reset}).select().single();
     btn.disabled=false; btn.textContent='Сохранить';
@@ -2664,10 +2675,8 @@ function getAllMonthlyData() {
 // ── Monthly fixed cost helper ─────────────────────────────────
 function monthFixed(tariffType, key) {
   const [y,m]=key.split('-').map(Number);
-  const d1=`${y}-${String(m).padStart(2,'0')}-01`;
-  const d2m=new Date(y,m,0).getDate();
-  const d2=`${y}-${String(m).padStart(2,'0')}-${String(d2m).padStart(2,'0')}`;
-  return +calcFixedProrated(tariffType,d1,d2).toFixed(2);
+  const { start, end } = monthBounds(y, m);   // конец — 1-е число след. месяца
+  return +calcFixedProrated(tariffType, start, end).toFixed(2);
 }
 
 function monthTotalCost(key, all) {
@@ -2927,10 +2936,26 @@ function renderAnalytics() {
     avgDataset('', wVals, '#94a3b8'),
   ],'м³');
 
-  makeChart('chart-heat', labels, [
-    {label:'взв.ед', data:hVals, backgroundColor:'rgba(239,68,68,.7)',borderColor:'#ef4444',borderWidth:1,borderRadius:3},
-    avgDataset('', hVals, '#ef4444'),
-  ],'взв.ед');
+  // Отопление — с разбивкой по комнатам: видно, какая комната съедает больше.
+  // Счётчики поставили в ноябре 2024, поэтому пустые месяцы до первого
+  // показания отрезаем — иначе график на 80% состоит из пустоты.
+  const roomMonthly = {};
+  for (const t of HEATING_TYPES) roomMonthly[t] = getMonthlyType(t, 0);
+  let hStart = keys.findIndex(k => hVals[keys.indexOf(k)] > 0);
+  if (hStart < 0) hStart = 0;
+  const hKeys   = keys.slice(hStart);
+  const hLabels = labels.slice(hStart);
+
+  const roomDatasets = HEATING_TYPES.map(t => ({
+    label: TYPES[t].room,
+    data: hKeys.map(k => +(((roomMonthly[t][k]?.cons) || 0) * TYPES[t].factor).toFixed(1)),
+    backgroundColor: ROOM_COLORS[t] + 'cc',
+    borderColor: ROOM_COLORS[t], borderWidth:1, borderRadius:2, stack:'h',
+  }));
+  makeChart('chart-heat', hLabels,
+    [...roomDatasets, avgDataset('', hVals.slice(hStart), '#ef4444')], 'взв.ед');
+
+  renderHeatingRooms(hKeys, roomMonthly);
 
   const eFixed=keys.map(k=>monthFixed('electricity',k));
   const wFixed=keys.map(k=>monthFixed('water',k));
@@ -2946,6 +2971,122 @@ function renderAnalytics() {
     {label:'🌡️ фикс.', data:hFixed,  backgroundColor:'rgba(239,68,68,.3)',  borderColor:'#ef4444',borderWidth:1,stack:'s'},
     avgDataset('', costTotals, '#94a3b8'),
   ],'€');
+
+  renderDataIssues();
+}
+
+// ── Отопление по комнатам за выбранный период ─────────────────
+function renderHeatingRooms(keys, roomMonthly) {
+  const el = document.getElementById('heat-rooms-breakdown');
+  if (!el) return;
+
+  const rows = HEATING_TYPES.map(t => {
+    let raw = 0, cost = 0;
+    for (const k of keys) {
+      const v = roomMonthly[t][k];
+      if (!v) continue;
+      raw  += v.cons || 0;
+      cost += v.cost || 0;
+    }
+    return { type:t, room:TYPES[t].room, factor:TYPES[t].factor, raw, units: raw*TYPES[t].factor, cost };
+  });
+
+  const totalUnits = rows.reduce((a,r)=>a+r.units,0);
+  const totalCost  = rows.reduce((a,r)=>a+r.cost,0);
+  if (totalUnits <= 0) {
+    el.innerHTML = `<div class="chart-card"><div class="chart-title">🌡️ Отопление по комнатам</div>
+      <div class="empty">За выбранный период расхода не было</div></div>`;
+    return;
+  }
+
+  rows.sort((a,b)=>b.units-a.units);
+  const max = rows[0].units || 1;
+
+  const body = rows.map(r => {
+    const share = totalUnits>0 ? r.units/totalUnits*100 : 0;
+    return `<tr>
+      <td class="row-head">
+        <span class="card-dot" style="background:${ROOM_COLORS[r.type]}"></span>${r.room}
+        <span class="heat-row-k">×${r.factor}</span>
+      </td>
+      <td data-l="Снято со счётчика"><span>${fmtN(r.raw,0)} ед</span></td>
+      <td data-l="Взвешенные"><span style="font-weight:650">${fmtN(r.units,0)} взв.ед</span></td>
+      <td data-l="Стоимость"><strong>${fmtE(r.cost)}</strong></td>
+      <td data-l="Доля">
+        <span style="display:flex;align-items:center;gap:8px;min-width:110px;justify-content:flex-end">
+          <span style="flex:1;max-width:70px;height:6px;border-radius:99px;background:var(--bg4);overflow:hidden;display:inline-block">
+            <span style="display:block;height:100%;width:${(r.units/max*100).toFixed(0)}%;background:${ROOM_COLORS[r.type]}"></span>
+          </span>
+          <b style="min-width:38px;text-align:right">${share.toFixed(0)}%</b>
+        </span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="chart-card">
+      <div class="chart-title" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <span>🌡️ Отопление по комнатам</span>
+        <span style="color:var(--muted);font-weight:500">
+          ${fmtN(totalUnits,0)} взв.ед · ${fmtE(totalCost)}
+        </span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Комната</th><th>Снято</th><th>Взвешенные</th><th>Стоимость</th><th>Доля</th>
+          </tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+      <div class="hint" style="margin-top:9px">
+        «Снято» — показание распределителя. «Взвешенные» — после умножения на коэффициент комнаты,
+        именно по ним считается счёт.
+      </div>
+    </div>`;
+}
+
+// ── Проверка качества данных ──────────────────────────────────
+// Периоды с падением показания или с нулевой длиной выпадают из
+// расчётов молча — здесь они показаны явно.
+function findDataIssues() {
+  const issues = [];
+  for (const type of Object.keys(TYPES)) {
+    const s = getTypeReadings(type);
+    for (let i = 1; i < s.length; i++) {
+      const prev = s[i-1], curr = s[i];
+      if (prev.date === curr.date) {
+        issues.push({ kind:'dup', type, id:curr.id,
+          text:`${TYPES[type].label}: две записи за ${fmtDate(curr.date)} (${fmtN(prev.value,TYPES[type].dec)} и ${fmtN(curr.value,TYPES[type].dec)}) — расход между ними не учитывается` });
+      } else if (curr.value < prev.value && !curr.is_reset) {
+        issues.push({ kind:'drop', type, id:curr.id,
+          text:`${TYPES[type].label}: ${fmtDate(curr.date)} показание упало с ${fmtN(prev.value,TYPES[type].dec)} до ${fmtN(curr.value,TYPES[type].dec)} без отметки о замене счётчика — период выпал из статистики` });
+      }
+    }
+  }
+  return issues;
+}
+
+function renderDataIssues() {
+  const el = document.getElementById('data-issues');
+  if (!el) return;
+  const issues = findDataIssues();
+  if (!issues.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="chart-card" style="border-color:rgba(245,158,11,.3)">
+      <div class="chart-title" style="color:#fbbf24">⚠️ Проверка данных · ${issues.length}</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        ${issues.map(i => `
+          <div style="display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.45">
+            <span style="color:#fbbf24">•</span>
+            <span style="flex:1">${i.text}</span>
+            <button class="btn btn-secondary btn-sm" onclick="openEditReading(${i.id})">Исправить</button>
+          </div>`).join('')}
+      </div>
+      <div class="hint" style="margin-top:10px">
+        Замену счётчика отмечайте галкой в карточке показания, двойную запись — исправьте дату или удалите лишнюю.
+      </div>
+    </div>`;
 }
 
 // ── Daily rate view ───────────────────────────────────────────
