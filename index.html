@@ -51,6 +51,19 @@ body{
   border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* ─── ЭКРАН ВХОДА ────────────────────────────────────────── */
+#auth-screen{display:none;position:fixed;inset:0;z-index:900;background:var(--bg);
+  overflow-y:auto;padding:calc(var(--sat) + 24px) 20px calc(var(--sab) + 24px)}
+#auth-screen.show{display:flex;align-items:center;justify-content:center}
+#auth-form{width:100%;max-width:340px;animation:fade .3s ease}
+.auth-logo{width:60px;height:60px;border-radius:17px;display:grid;place-items:center;
+  background:linear-gradient(145deg,#f59e0b,#ef4444);font-size:30px;margin:0 auto 18px;
+  box-shadow:0 10px 30px -12px rgba(245,158,11,.6)}
+.auth-title{font-size:25px;font-weight:700;text-align:center;letter-spacing:-.6px}
+.auth-sub{font-size:13px;color:var(--muted);text-align:center;margin:5px 0 26px}
+.auth-error{font-size:12.5px;color:#fca5a5;min-height:17px;margin-bottom:10px;line-height:1.4}
+.auth-note{font-size:11.5px;color:var(--muted);text-align:center;margin-top:14px;line-height:1.5}
+
 /* ─── APP HEADER ─────────────────────────────────────────── */
 .appbar{
   position:sticky;top:0;z-index:100;background:rgba(11,13,18,.82);
@@ -382,6 +395,30 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
 <div id="loader">
   <div class="spinner"></div>
   <div style="color:var(--muted);font-size:14px">Загружаю…</div>
+</div>
+
+<!-- ЭКРАН ВХОДА -->
+<div id="auth-screen">
+  <form id="auth-form" onsubmit="event.preventDefault();signIn()">
+    <div class="auth-logo">⚡</div>
+    <h1 class="auth-title">Коммуналка</h1>
+    <p class="auth-sub">Учёт электричества, воды и отопления</p>
+
+    <div class="fg" style="margin-bottom:12px">
+      <label for="auth-email">Email</label>
+      <input type="email" id="auth-email" autocomplete="username" inputmode="email"
+             enterkeyhint="next" required placeholder="you@example.com">
+    </div>
+    <div class="fg" style="margin-bottom:6px">
+      <label for="auth-pass">Пароль</label>
+      <input type="password" id="auth-pass" autocomplete="current-password"
+             enterkeyhint="go" required placeholder="••••••••">
+    </div>
+    <div class="auth-error" id="auth-error"></div>
+
+    <button type="submit" class="btn btn-primary btn-block" id="auth-btn">Войти</button>
+    <p class="auth-note">Данные доступны только после входа.</p>
+  </form>
 </div>
 
 <header class="appbar" style="display:none" id="nav">
@@ -933,6 +970,26 @@ td{padding:10px 12px;border-top:1px solid var(--border);white-space:nowrap}
   <div class="modal" style="width:540px;max-width:98vw">
     <div class="modal-title">⚙️ Настройки</div>
     <div style="display:flex;flex-direction:column;gap:14px">
+
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:13px">
+        <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-bottom:8px">АККАУНТ</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <span id="s-user-email" style="font-size:13.5px;word-break:break-all">—</span>
+          <button class="btn btn-secondary btn-sm" onclick="signOut()">Выйти</button>
+        </div>
+      </div>
+
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:13px">
+        <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-bottom:8px">РЕЗЕРВНАЯ КОПИЯ</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.5">
+          Скачивает все показания, тарифы, авансы и расчёты одним JSON-файлом.
+          Делайте это хотя бы раз в пару месяцев.
+        </div>
+        <button class="btn btn-secondary btn-block btn-sm" id="backup-btn" onclick="exportBackup()">
+          ⬇ Скачать резервную копию
+        </button>
+      </div>
+
       <div class="fg">
         <label style="display:flex;align-items:center;gap:7px">
           Google Sheets — URL скрипта
@@ -1057,12 +1114,84 @@ async function loadAll() {
     sb.from('advances').select('*').order('effective_from',{ascending:true}),
     sb.from('settlements').select('*').order('period_year',{ascending:true}),
   ]);
+  // ошибку нельзя глотать: при протухшей сессии RLS вернёт отказ,
+  // и приложение выглядело бы просто пустым вместо просьбы войти
+  const failed = [r,t,s,adv,sett].find(x => x.error);
+  if (failed) { const e = new Error(failed.error.message); e.code = failed.error.code; throw e; }
+
   readings    = r.data    || [];
   tariffs     = t.data    || [];
   advances    = adv.data  || [];
   settlements = sett.data || [];
   for (const row of (s.data || [])) localStorage.setItem(row.key, row.value);
 }
+
+function isAuthError(e) {
+  const m = (e && e.message || '').toLowerCase();
+  return m.includes('jwt') || m.includes('token') || m.includes('unauthorized')
+      || m.includes('permission denied') || e?.code === 'PGRST301' || e?.code === '42501';
+}
+
+// ─── АВТОРИЗАЦИЯ ──────────────────────────────────────────────
+// Доступ к базе только для вошедшего пользователя (RLS: authenticated).
+async function boot() {
+  let session = null;
+  try {
+    const { data } = await sb.auth.getSession();
+    session = data.session;
+  } catch(e) { /* нет сети — покажем экран входа */ }
+  if (!session) { showAuth(); return; }
+  await init();
+}
+
+function showAuth(message) {
+  document.getElementById('loader').style.display = 'none';
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('tabbar').style.display = 'none';
+  document.getElementById('auth-screen').classList.add('show');
+  const err = document.getElementById('auth-error');
+  if (err) err.textContent = message || '';
+  const email = document.getElementById('auth-email');
+  if (email && !email.value) setTimeout(()=>email.focus(), 250);
+}
+
+async function signIn() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-pass').value;
+  const btn = document.getElementById('auth-btn');
+  const err = document.getElementById('auth-error');
+  err.textContent = '';
+  if (!email || !password) { err.textContent = 'Введите email и пароль'; return; }
+
+  btn.disabled = true; btn.textContent = 'Вхожу…';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Войти';
+
+  if (error) {
+    err.textContent = /invalid login/i.test(error.message)
+      ? 'Неверный email или пароль'
+      : 'Ошибка входа: ' + error.message;
+    return;
+  }
+  document.getElementById('auth-pass').value = '';
+  document.getElementById('auth-screen').classList.remove('show');
+  document.getElementById('loader').style.display = 'flex';
+  await init();
+}
+
+async function signOut() {
+  if (!confirm('Выйти из приложения?')) return;
+  await sb.auth.signOut();
+  location.reload();
+}
+
+// Сессия протухла или выход из другой вкладки
+sb.auth.onAuthStateChange((event) => {
+  if (event === 'SIGNED_OUT') {
+    const open = document.getElementById('auth-screen').classList.contains('show');
+    if (!open) location.reload();
+  }
+});
 
 async function init() {
   try {
@@ -1078,10 +1207,16 @@ async function init() {
     const p = new URLSearchParams(location.search).get('p');
     if (p && document.getElementById('page-'+p)) showPage(p);
   } catch(e) {
+    if (isAuthError(e)) {           // сессия истекла или доступ закрыт
+      await sb.auth.signOut().catch(()=>{});
+      showAuth('Сессия истекла — войдите заново');
+      return;
+    }
+    document.getElementById('loader').style.display = 'flex';
     document.getElementById('loader').innerHTML =
       `<div style="color:var(--heat);font-size:14px;text-align:center;padding:24px;max-width:300px">
         Нет связи с базой.<br>${e.message}<br><br>
-        <small style="color:var(--muted)">Проверьте интернет или выполните SQL-миграцию в Supabase</small><br><br>
+        <small style="color:var(--muted)">Проверьте интернет и повторите</small><br><br>
         <button class="btn btn-secondary btn-sm" onclick="location.reload()">Повторить</button>
       </div>`;
   }
@@ -1964,7 +2099,49 @@ async function deleteTariff(id) {
 function openSettings() {
   document.getElementById('s-gsheets-url').value = localStorage.getItem('gsheetsUrl') || '';
   updateSyncStatus();
+  sb.auth.getUser().then(({data}) => {
+    const el = document.getElementById('s-user-email');
+    if (el) el.textContent = data?.user?.email || '—';
+  }).catch(()=>{});
   document.getElementById('settings-modal').classList.add('open');
+}
+
+// ─── РЕЗЕРВНАЯ КОПИЯ ──────────────────────────────────────────
+// Выгружает всё из базы в JSON-файл на устройство.
+async function exportBackup() {
+  const btn = document.getElementById('backup-btn');
+  btn.disabled = true; btn.textContent = 'Собираю…';
+  try {
+    const tables = ['readings','tariffs','advances','settlements','settings','expenses'];
+    const dump = { app:'kommunalka', exported_at:new Date().toISOString(), tables:{} };
+
+    for (const t of tables) {
+      const { data, error } = await sb.from(t).select('*');
+      if (error) {
+        if (error.code === '42P01') { dump.tables[t] = null; continue; } // таблицы нет — не беда
+        throw new Error(`${t}: ${error.message}`);
+      }
+      dump.tables[t] = data || [];
+    }
+
+    const counts = Object.entries(dump.tables)
+      .filter(([,v]) => v)
+      .map(([k,v]) => `${k} ${v.length}`).join(' · ');
+
+    const blob = new Blob([JSON.stringify(dump, null, 1)], {type:'application/json'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `kommunalka-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 10000);
+
+    localStorage.setItem('lastBackup', new Date().toISOString());
+    toast(`Копия сохранена · ${counts}`, 'ok');
+  } catch(e) {
+    toast('Не удалось выгрузить: ' + e.message, 'err');
+  }
+  btn.disabled = false; btn.textContent = '⬇ Скачать резервную копию';
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
 
@@ -3647,7 +3824,7 @@ document.getElementById('settlement-modal').addEventListener('click',function(e)
 document.getElementById('advance-import-modal').addEventListener('click',function(e){if(e.target===this)closeAdvanceImportModal()});
 
 // ─── START ────────────────────────────────────────────────────
-init();
+boot();
 </script>
 </body>
 </html>
